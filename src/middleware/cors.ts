@@ -1,5 +1,4 @@
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const cors = require('cors') as typeof import('cors');
+import corsModule from 'cors';
 
 interface CorsOptions {
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => void;
@@ -30,4 +29,4 @@ const corsOptions: CorsOptions = {
   allowedHeaders: ['Content-Type', 'Authorization'],
 };
 
-export default cors(corsOptions);
+export default corsModule(corsOptions);
