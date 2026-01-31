@@ -361,17 +361,27 @@ router.post('/', async (req: Request, res: Response) => {
       return;
     }
 
-    // Parse targetCredits: if it's a range like "15~18", use minimum
+    // Parse targetCredits: support range like "15~18"
     let targetCredits: number;
+    let targetCreditsMin: number;
+    let targetCreditsMax: number;
+    
     if (typeof requestData.targetCredits === 'string') {
       const rangeMatch = requestData.targetCredits.match(/(\d+)\s*[~-]\s*(\d+)/);
       if (rangeMatch) {
-        targetCredits = parseInt(rangeMatch[1], 10); // Use minimum
+        targetCreditsMin = parseInt(rangeMatch[1], 10);
+        targetCreditsMax = parseInt(rangeMatch[2], 10);
+        targetCredits = targetCreditsMin; // Use minimum for backward compatibility
       } else {
-        targetCredits = parseInt(requestData.targetCredits, 10) || 18;
+        const singleValue = parseInt(requestData.targetCredits, 10) || 18;
+        targetCredits = singleValue;
+        targetCreditsMin = singleValue;
+        targetCreditsMax = singleValue;
       }
     } else {
       targetCredits = requestData.targetCredits;
+      targetCreditsMin = targetCredits;
+      targetCreditsMax = targetCredits;
     }
 
     // Calculate fixed lectures credits
@@ -383,19 +393,23 @@ router.post('/', async (req: Request, res: Response) => {
     // If targetCredits is not provided, use default (18 - fixed credits)
     if (!targetCredits || targetCredits <= 0) {
       targetCredits = 18;
+      targetCreditsMin = 18;
+      targetCreditsMax = 18;
     }
 
     // targetCredits is the TOTAL target (including fixed lectures)
     // We need to calculate remaining credits needed
     const remainingTargetCredits = Math.max(0, targetCredits - fixedCredits);
+    const remainingTargetCreditsMin = Math.max(0, targetCreditsMin - fixedCredits);
+    const remainingTargetCreditsMax = Math.max(0, targetCreditsMax - fixedCredits);
 
     // Generate candidate timetables (with execution time tracking)
     console.log('=== Generating candidates ===');
     console.log('Available courses:', allCourses.length);
     console.log('Fixed lectures:', fixedLectures.length, `(${fixedCredits} credits)`);
     console.log('Blocked times:', blockedTimes.length);
-    console.log('Target credits (total):', targetCredits);
-    console.log('Target credits (remaining):', remainingTargetCredits);
+    console.log('Target credits (total):', targetCredits, `(range: ${targetCreditsMin}-${targetCreditsMax})`);
+    console.log('Target credits (remaining):', remainingTargetCredits, `(range: ${remainingTargetCreditsMin}-${remainingTargetCreditsMax})`);
     console.log('Parsed constraints:', JSON.stringify(parsedConstraints, null, 2));
     
     const startTime = Date.now();
@@ -405,6 +419,8 @@ router.post('/', async (req: Request, res: Response) => {
       blockedTimes,
       targetCredits, // Pass total target for scoring
       remainingTargetCredits, // Pass remaining target for backtracking
+      remainingTargetCreditsMin, // Pass min range
+      remainingTargetCreditsMax, // Pass max range
       fixedCredits, // Pass fixed credits
       parsedConstraints,
       requestData.strategy,

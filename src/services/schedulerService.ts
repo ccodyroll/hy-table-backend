@@ -12,6 +12,8 @@ class SchedulerService {
     blockedTimes: BlockedTime[],
     targetCredits: number, // Total target credits (for scoring)
     remainingTargetCredits: number, // Remaining credits needed (for backtracking)
+    remainingTargetCreditsMin: number, // Minimum remaining credits (for range)
+    remainingTargetCreditsMax: number, // Maximum remaining credits (for range)
     fixedCredits: number, // Fixed lectures credits (pre-calculated)
     constraints: UserConstraints & { hardConstraints?: UserConstraints },
     strategy: 'MAJOR_FOCUS' | 'MIX' | 'INTEREST_FOCUS',
@@ -51,7 +53,8 @@ class SchedulerService {
       validCourses,
       fixedLectures,
       blockedTimes,
-      remainingTargetCredits, // Use remaining credits for backtracking
+      remainingTargetCreditsMin, // Use min range for backtracking
+      remainingTargetCreditsMax, // Use max range for backtracking
       fixedCredits, // Pass fixed credits to calculate total
       softConstraints, // Use SOFT constraints for backtracking (validation only checks maxClassesPerDay, etc.)
       strategy,
@@ -132,7 +135,8 @@ class SchedulerService {
     courses: Course[],
     fixedLectures: FixedLecture[],
     blockedTimes: BlockedTime[],
-    remainingTargetCredits: number, // Remaining credits needed (excluding fixed)
+    remainingTargetCreditsMin: number, // Minimum remaining credits (excluding fixed)
+    remainingTargetCreditsMax: number, // Maximum remaining credits (excluding fixed)
     fixedCredits: number, // Fixed lectures credits
     constraints: UserConstraints,
     strategy: 'MAJOR_FOCUS' | 'MIX' | 'INTEREST_FOCUS',
@@ -151,12 +155,8 @@ class SchedulerService {
     // Total credits = fixed credits + current credits from selection
     const totalCredits = fixedCredits + currentCredits;
 
-    // Define target range: allow some flexibility around the target
-    const minTarget = Math.max(0, remainingTargetCredits - 2); // Allow 2 credits below target
-    const maxTarget = remainingTargetCredits + 3; // Allow 3 credits above target
-
-    // Check if we've reached the minimum target
-    if (currentCredits >= minTarget) {
+    // Check if we're within the target range
+    if (currentCredits >= remainingTargetCreditsMin && currentCredits <= remainingTargetCreditsMax) {
       // Check if selection is valid
       if (this.isValidSelection(currentSelection, constraints)) {
         const allSlots = this.buildTimetableGrid(currentSelection, fixedLectures);
@@ -170,20 +170,25 @@ class SchedulerService {
         });
       }
       
-      // Continue exploring even after reaching target to find better combinations
-      // But stop if we've exceeded the maximum target by too much
-      if (currentCredits >= maxTarget) {
+      // If we've reached the maximum, stop exploring (don't add more courses)
+      if (currentCredits >= remainingTargetCreditsMax) {
         return;
       }
+    }
+
+    // If we're below minimum, continue exploring
+    // If we're above maximum, stop
+    if (currentCredits > remainingTargetCreditsMax) {
+      return;
     }
 
     // Try adding each remaining course
     for (let i = 0; i < courses.length; i++) {
       const course = courses[i];
 
-      // Skip if adding this course would exceed reasonable limits
-      // Allow up to maxTarget + 3 for flexibility
-      if (currentCredits + course.credits > maxTarget + 3) {
+      // Skip if adding this course would exceed the maximum target
+      // Allow slight overflow (1 credit) for flexibility in course selection
+      if (currentCredits + course.credits > remainingTargetCreditsMax + 1) {
         continue;
       }
 
@@ -198,7 +203,8 @@ class SchedulerService {
         courses.slice(i + 1),
         fixedLectures,
         blockedTimes,
-        remainingTargetCredits,
+        remainingTargetCreditsMin,
+        remainingTargetCreditsMax,
         fixedCredits,
         constraints,
         strategy,
