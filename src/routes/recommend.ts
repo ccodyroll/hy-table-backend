@@ -210,6 +210,56 @@ router.post('/', async (req: Request, res: Response) => {
       if (typeof value === 'string') {
         // Handle constraint types
         if (key === '시간 제약' || key === '공강 설정') {
+          // Try to parse as JSON string first (frontend sends JSON stringified)
+          try {
+            const parsed = JSON.parse(value);
+            if (parsed && typeof parsed === 'object') {
+              // Handle hard constraints
+              if (Array.isArray(parsed.hard)) {
+                for (const item of parsed.hard) {
+                  if (item.text) {
+                    const text = item.text;
+                    if (['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].includes(text)) {
+                      constraints.avoidDays = [...(constraints.avoidDays || []), text as DayOfWeek];
+                    } else if (text === 'avoid_morning') {
+                      constraints.avoidMorning = true;
+                    } else if (text === 'keep_lunch_time') {
+                      constraints.keepLunchTime = true;
+                    }
+                  }
+                }
+              }
+              // Handle soft constraints
+              if (Array.isArray(parsed.soft)) {
+                for (const item of parsed.soft) {
+                  if (item.text) {
+                    const text = item.text;
+                    if (['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].includes(text)) {
+                      constraints.avoidDays = [...(constraints.avoidDays || []), text as DayOfWeek];
+                    } else if (text === 'avoid_morning') {
+                      constraints.avoidMorning = true;
+                    } else if (text === 'keep_lunch_time') {
+                      constraints.keepLunchTime = true;
+                    } else if (text.startsWith('max_') && text.includes('_per_day')) {
+                      const match = text.match(/max_(\d+)_per_day/);
+                      if (match) {
+                        constraints.maxClassesPerDay = parseInt(match[1], 10);
+                      }
+                    } else if (text.startsWith('max_') && text.includes('_consecutive')) {
+                      const match = text.match(/max_(\d+)_consecutive/);
+                      if (match) {
+                        constraints.maxConsecutiveClasses = parseInt(match[1], 10);
+                      }
+                    }
+                  }
+                }
+              }
+              continue; // Already handled, skip to next constraint
+            }
+          } catch (e) {
+            // Not JSON, continue with normal parsing
+          }
+
           // Parse day-based constraints like "MON_WED_FRI" or "수요일 공강"
           if (value.includes('_') && ['MON', 'TUE', 'WED', 'THU', 'FRI'].some(d => value.includes(d))) {
             const days = value.split('_').filter(d => ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].includes(d)) as DayOfWeek[];
