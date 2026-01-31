@@ -4,6 +4,7 @@ import { timeSlotsOverlap, isMorningTime, overlapsLunchTime, timeToMinutes } fro
 class SchedulerService {
   /**
    * Generate candidate timetables
+   * Returns candidates and debug information
    */
   generateCandidates(
     availableCourses: Course[],
@@ -14,7 +15,10 @@ class SchedulerService {
     strategy: 'MAJOR_FOCUS' | 'MIX' | 'INTEREST_FOCUS',
     tracks: string[],
     interests: string[]
-  ): TimetableCandidate[] {
+  ): { candidates: TimetableCandidate[]; debug?: { candidatesGenerated: number; combinationsFilteredByBlockedTimes: number } } {
+    // Track statistics
+    const initialCourseCount = availableCourses.length;
+
     // Filter out courses that conflict with fixed lectures or blocked times
     const validCourses = this.filterValidCourses(
       availableCourses,
@@ -22,6 +26,10 @@ class SchedulerService {
       blockedTimes,
       constraints
     );
+
+    // Count how many courses were filtered out due to blockedTimes
+    // (This is approximate - some courses might be filtered for multiple reasons)
+    const filteredByBlockedTimesCount = initialCourseCount - validCourses.length;
 
     // Generate candidates using backtracking
     const candidates: TimetableCandidate[] = [];
@@ -48,7 +56,15 @@ class SchedulerService {
     );
 
     // Sort by score (descending)
-    return scoredCandidates.sort((a, b) => b.score - a.score);
+    const sortedCandidates = scoredCandidates.sort((a, b) => b.score - a.score);
+
+    return {
+      candidates: sortedCandidates,
+      debug: {
+        candidatesGenerated: sortedCandidates.length,
+        combinationsFilteredByBlockedTimes: filteredByBlockedTimesCount,
+      },
+    };
   }
 
   /**

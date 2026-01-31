@@ -3,8 +3,8 @@ import airtableService from '../services/airtableService';
 import geminiService from '../services/geminiService';
 import schedulerService from '../services/schedulerService';
 import { z } from 'zod';
-import { DayOfWeek, TimeSlot } from '../types';
-import { parseTimeRange, parseKoreanDay } from '../utils/timeParser';
+import { DayOfWeek, TimeSlot, BlockedTime } from '../types';
+import { parseTimeRange, parseKoreanDay, isValidTimeFormat, isValidTimeRange, timeToMinutes } from '../utils/timeParser';
 
 const router = Router();
 
@@ -21,10 +21,13 @@ const recommendRequestSchema = z.object({
   })).optional().default([]),
   blockedTimes: z.array(z.object({
     day: z.string(),
-    startTime: z.string().optional(),
-    endTime: z.string().optional(),
-    startHour: z.number().optional(),
-    duration: z.number().optional(),
+    start: z.string().optional(), // HH:MM format
+    end: z.string().optional(), // HH:MM format
+    startTime: z.string().optional(), // Alternative: HH:MM format
+    endTime: z.string().optional(), // Alternative: HH:MM format
+    startHour: z.number().optional(), // Alternative: hour number
+    duration: z.number().optional(), // Alternative: duration in hours
+    label: z.string().optional(), // Optional label (ignored by server)
   })).optional().default([]),
   strategy: z.enum(['MAJOR_FOCUS', 'MIX', 'INTEREST_FOCUS']).default('MIX'),
   tracks: z.array(z.string()).optional().default([]),
@@ -83,12 +86,20 @@ router.post('/', async (req: Request, res: Response) => {
       };
     });
 
-    // Convert blockedTimes format
-    const blockedTimes = requestData.blockedTimes.map(blocked => {
+    // Validate and convert blockedTimes format
+    const blockedTimes: BlockedTime[] = [];
+    const blockedTimesValidationErrors: Array<{ index: number; message: string }> = [];
+
+    for (let i = 0; i < requestData.blockedTimes.length; i++) {
+      const blocked = requestData.blockedTimes[i];
       let startTime: string;
       let endTime: string;
       
-      if (blocked.startTime && blocked.endTime) {
+      // Try to get start/end from various formats
+      if (blocked.start && blocked.end) {
+        startTime = blocked.start;
+        endTime = blocked.end;
+      } else if (blocked.startTime && blocked.endTime) {
         startTime = blocked.startTime;
         endTime = blocked.endTime;
       } else if (blocked.startHour !== undefined && blocked.duration !== undefined) {
@@ -96,16 +107,66 @@ router.post('/', async (req: Request, res: Response) => {
         const endHour = blocked.startHour + blocked.duration;
         endTime = `${endHour.toString().padStart(2, '0')}:00`;
       } else {
-        throw new Error('Invalid blockedTime format');
+        blockedTimesValidationErrors.push({
+          index: i,
+          message: 'Missing required fields: must provide (start, end) or (startTime, endTime) or (startHour, duration)',
+        });
+        continue;
       }
 
-      const day = parseKoreanDay(blocked.day) || 'MON';
-      return {
+      // Validate time format (HH:MM)
+      if (!isValidTimeFormat(startTime)) {
+        blockedTimesValidationErrors.push({
+          index: i,
+          message: `Invalid start time format: "${startTime}". Expected HH:MM format (e.g., "18:00")`,
+        });
+        continue;
+      }
+
+      if (!isValidTimeFormat(endTime)) {
+        blockedTimesValidationErrors.push({
+          index: i,
+          message: `Invalid end time format: "${endTime}". Expected HH:MM format (e.g., "21:00")`,
+        });
+        continue;
+      }
+
+      // Validate start < end
+      if (!isValidTimeRange(startTime, endTime)) {
+        blockedTimesValidationErrors.push({
+          index: i,
+          message: `Invalid time range: start time "${startTime}" must be before end time "${endTime}"`,
+        });
+        continue;
+      }
+
+      // Parse day
+      const day = parseKoreanDay(blocked.day);
+      if (!day) {
+        blockedTimesValidationErrors.push({
+          index: i,
+          message: `Invalid day: "${blocked.day}". Expected one of: 월, 화, 수, 목, 금, 토, 일, MON, TUE, WED, THU, FRI, SAT, SUN`,
+        });
+        continue;
+      }
+
+      blockedTimes.push({
         day: day as DayOfWeek,
         startTime,
         endTime,
-      };
-    });
+        label: blocked.label, // Optional, preserved but not used
+      });
+    }
+
+    // If there are validation errors, return 400
+    if (blockedTimesValidationErrors.length > 0) {
+      res.status(400).json({
+        error: 'VALIDATION_ERROR',
+        message: 'Invalid blockedTimes data',
+        details: blockedTimesValidationErrors,
+      });
+      return;
+    }
 
     // Convert constraints from frontend format to internal format
     const constraints: any = {};
@@ -186,7 +247,7 @@ router.post('/', async (req: Request, res: Response) => {
     const targetCredits = requestData.targetCredits || (18 - basketCredits);
 
     // Generate candidate timetables
-    const candidates = schedulerService.generateCandidates(
+    const result = schedulerService.generateCandidates(
       allCourses,
       fixedLectures,
       blockedTimes,
@@ -196,6 +257,10 @@ router.post('/', async (req: Request, res: Response) => {
       requestData.tracks,
       requestData.interests
     );
+
+    // Extract candidates and debug info
+    const candidates = result.candidates;
+    const debugInfo = result.debug || {};
 
     // Take top candidates (limit to 3 for frontend)
     const topCandidates = candidates.slice(0, 3);
@@ -236,9 +301,23 @@ router.post('/', async (req: Request, res: Response) => {
       };
     });
 
-    res.json({
+    // Build response with debug info
+    const response: any = {
       recommendations,
-    });
+    };
+
+    // Add debug information
+    if (debugInfo.candidatesGenerated !== undefined || debugInfo.geminiUsed !== undefined || blockedTimes.length > 0) {
+      response.debug = {
+        candidatesGenerated: debugInfo.candidatesGenerated || candidates.length,
+        geminiUsed: geminiUsed,
+        blockedTimesApplied: blockedTimes.length > 0,
+        blockedTimesCount: blockedTimes.length,
+        combinationsFilteredByBlockedTimes: debugInfo.combinationsFilteredByBlockedTimes || 0,
+      };
+    }
+
+    res.json(response);
   } catch (error: any) {
     console.error('Error generating recommendations:', error);
 

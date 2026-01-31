@@ -30,8 +30,9 @@ export interface FixedLecture {
 
 export interface BlockedTime {
   day: DayOfWeek;
-  startTime: string;
-  endTime: string;
+  startTime: string; // HH:mm format
+  endTime: string; // HH:mm format
+  label?: string; // Optional label (e.g., "알바", "동아리")
 }
 
 export interface UserConstraints {
@@ -86,6 +87,9 @@ export interface RecommendationResponse {
   debug: {
     candidatesGenerated: number;
     geminiUsed: boolean;
+    blockedTimesApplied?: boolean;
+    blockedTimesCount?: number;
+    combinationsFilteredByBlockedTimes?: number;
   };
 }
 

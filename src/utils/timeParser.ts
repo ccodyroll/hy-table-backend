@@ -156,3 +156,32 @@ export function overlapsLunchTime(slot: TimeSlot): boolean {
 
   return start < lunchEnd && end > lunchStart;
 }
+
+/**
+ * Validate time string format (HH:MM)
+ */
+export function isValidTimeFormat(timeStr: string): boolean {
+  const timeRegex = /^([0-1][0-9]|2[0-3]):[0-5][0-9]$/;
+  return timeRegex.test(timeStr);
+}
+
+/**
+ * Validate that start time is before end time
+ */
+export function isValidTimeRange(startTime: string, endTime: string): boolean {
+  const start = timeToMinutes(startTime);
+  const end = timeToMinutes(endTime);
+  return start < end;
+}
+
+/**
+ * Check if a time slot overlaps with any blocked time
+ */
+export function overlapsWithBlockedTime(slot: TimeSlot, blockedTime: { day: DayOfWeek; startTime: string; endTime: string }): boolean {
+  if (slot.day !== blockedTime.day) return false;
+  return timeSlotsOverlap(slot, {
+    day: blockedTime.day,
+    startTime: blockedTime.startTime,
+    endTime: blockedTime.endTime,
+  });
+}
