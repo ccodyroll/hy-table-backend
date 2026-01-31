@@ -401,13 +401,23 @@ export function buildRecommendationResponse(
       } while (usedColors.has(color) && attempts < PASTEL_COLORS.length);
       usedColors.add(color);
 
+      // 🔍 DEBUG: Log raw course data
+      if (rankIndex === 0 && courseIndex < 3) {
+        console.log(`🔍 RAW BACKEND DATA CHECK:`);
+        console.log(`📋 Recommendation ${rankIndex}, Course ${courseIndex}:`);
+        console.log(`  Course ID: ${course.courseId}`);
+        console.log(`  Course Name: ${course.name}`);
+        console.log(`  meetingTimes (raw):`, JSON.stringify(course.meetingTimes, null, 2));
+        console.log(`  meetingTimes length: ${course.meetingTimes?.length || 0}`);
+      }
+
       // 첫 번째 meeting time 사용 (일반적으로 하나의 시간대)
       // meetingTimes가 비어있을 수 있으므로 체크
       if (!course.meetingTimes || course.meetingTimes.length === 0) {
         // meetingTimes가 없으면 경고 로그 출력
         console.warn(`[WARNING] Course "${course.name}" (${course.courseId}) has no meetingTimes. Using default values.`);
         // meetingTimes가 없으면 기본값 사용
-        return {
+        const defaultCourse = {
           id: course.courseId,
           name: course.name,
           code: course.courseId,
@@ -419,12 +429,17 @@ export function buildRecommendationResponse(
           duration: 2, // 기본값: 1시간
           color,
         };
+        if (rankIndex === 0 && courseIndex < 3) {
+          console.log(`  → Using DEFAULT values: day=${defaultCourse.day}, startHour=${defaultCourse.startHour}, duration=${defaultCourse.duration}`);
+        }
+        return defaultCourse;
       }
 
       const firstMeeting = course.meetingTimes[0];
       if (!firstMeeting || !firstMeeting.startTime || !firstMeeting.endTime) {
         // firstMeeting이 유효하지 않으면 기본값 사용
-        return {
+        console.warn(`[WARNING] Course "${course.name}" (${course.courseId}) has invalid firstMeeting:`, firstMeeting);
+        const defaultCourse = {
           id: course.courseId,
           name: course.name,
           code: course.courseId,
@@ -436,30 +451,43 @@ export function buildRecommendationResponse(
           duration: 2, // 기본값: 1시간
           color,
         };
+        if (rankIndex === 0 && courseIndex < 3) {
+          console.log(`  → Using DEFAULT values (invalid firstMeeting): day=${defaultCourse.day}, startHour=${defaultCourse.startHour}, duration=${defaultCourse.duration}`);
+        }
+        return defaultCourse;
       }
 
       const startHour = parseInt(firstMeeting.startTime.split(':')[0], 10);
       const endHour = parseInt(firstMeeting.endTime.split(':')[0], 10);
       const duration = endHour - startHour;
+      const day = dayToNumber[firstMeeting.day] ?? 0;
 
-      return {
+      const frontendCourse = {
         id: course.courseId,
         name: course.name,
         code: course.courseId,
         credits: course.credits,
         professor: course.instructor || '',
         type: course.deliveryType || course.category || 'OFFLINE',
-        day: dayToNumber[firstMeeting.day] ?? 0,
+        day,
         startHour,
         duration,
         color,
       };
+
+      // 🔍 DEBUG: Log parsed result
+      if (rankIndex === 0 && courseIndex < 3) {
+        console.log(`  → Parsed result: day=${day} (${firstMeeting.day}), startHour=${startHour} (${firstMeeting.startTime}), duration=${duration} (${firstMeeting.startTime}-${firstMeeting.endTime})`);
+        console.log(`  → Final frontend course:`, JSON.stringify(frontendCourse, null, 2));
+      }
+
+      return frontendCourse;
     });
 
     const warnings = generateWarnings(candidate, targetCredits, parsedConstraints);
     const explanation = generateExplanation(candidate, targetCredits, parsedConstraints);
 
-    return {
+    const recommendation = {
       rank: rankIndex + 1,
       totalCredits: candidate.totalCredits,
       score: candidate.score,
@@ -467,9 +495,26 @@ export function buildRecommendationResponse(
       warnings,
       courses: coursesWithColor,
     };
+
+    // 🔍 DEBUG: Log first recommendation's courses
+    if (rankIndex === 0) {
+      console.log(`📊 Full response structure for Recommendation ${rankIndex}:`);
+      console.log(`  Total courses: ${coursesWithColor.length}`);
+      if (coursesWithColor.length > 0) {
+        console.log(`  First course RAW:`, JSON.stringify(coursesWithColor[0], null, 2));
+      }
+      if (coursesWithColor.length > 1) {
+        console.log(`  Second course RAW:`, JSON.stringify(coursesWithColor[1], null, 2));
+      }
+      if (coursesWithColor.length > 2) {
+        console.log(`  Third course RAW:`, JSON.stringify(coursesWithColor[2], null, 2));
+      }
+    }
+
+    return recommendation;
   });
 
-  return {
+  const response = {
     recommendations,
     debug: {
       candidatesGenerated: runMeta.candidatesGenerated,
@@ -477,4 +522,9 @@ export function buildRecommendationResponse(
       executionTime: runMeta.executionTime,
     },
   };
+
+  // 🔍 DEBUG: Log full response structure
+  console.log(`📊 Full response structure:`, JSON.stringify(response, null, 2));
+
+  return response;
 }
