@@ -28,6 +28,9 @@ app.use((req, res, next) => {
 // GET /health
 app.use('/health', healthRouter);
 
+// GET /api/health
+app.get('/api/health', (req, res) => res.json({ ok: true }));
+
 // GET /api/courses
 app.use('/api/courses', coursesRouter);
 
