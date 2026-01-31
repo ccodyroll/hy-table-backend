@@ -307,7 +307,7 @@ router.post('/', async (req: Request, res: Response) => {
     };
 
     // Add debug information
-    if (debugInfo.candidatesGenerated !== undefined || debugInfo.geminiUsed !== undefined || blockedTimes.length > 0) {
+    if (debugInfo.candidatesGenerated !== undefined || geminiUsed || blockedTimes.length > 0) {
       response.debug = {
         candidatesGenerated: debugInfo.candidatesGenerated || candidates.length,
         geminiUsed: geminiUsed,
