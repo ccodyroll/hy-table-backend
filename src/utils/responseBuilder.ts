@@ -13,6 +13,19 @@ interface ResponseBuilderInput {
   targetCredits: number;
 }
 
+interface FrontendCourse {
+  id: string;
+  name: string;
+  code: string;
+  credits: number;
+  professor: string;
+  type: string;
+  day: number;
+  startHour: number;
+  duration: number;
+  color: string;
+}
+
 interface SuccessResponse {
   recommendations: Array<{
     rank: number;
@@ -20,8 +33,7 @@ interface SuccessResponse {
     score: number;
     explanation: string;
     warnings: string[];
-    courses: Array<Course & { color: string }>;
-    timetableGrid?: TimeSlot[];
+    courses: FrontendCourse[];
   }>;
   debug: {
     candidatesGenerated: number;
@@ -306,10 +318,21 @@ export function buildRecommendationResponse(
   // 상위 3개 선택
   const topCandidates = sortedCandidates.slice(0, 3);
 
+  // 요일을 숫자로 변환 (0=월요일, 1=화요일, ...)
+  const dayToNumber: Record<DayOfWeek, number> = {
+    'MON': 0,
+    'TUE': 1,
+    'WED': 2,
+    'THU': 3,
+    'FRI': 4,
+    'SAT': 5,
+    'SUN': 6,
+  };
+
   // 색상 할당 (각 후보 내에서 중복 없이)
   const recommendations = topCandidates.map((candidate, rankIndex) => {
     const usedColors = new Set<string>();
-    const coursesWithColor = candidate.courses.map((course, courseIndex) => {
+    const coursesWithColor: FrontendCourse[] = candidate.courses.map((course, courseIndex) => {
       let color: string;
       let attempts = 0;
       do {
@@ -317,7 +340,25 @@ export function buildRecommendationResponse(
         attempts++;
       } while (usedColors.has(color) && attempts < PASTEL_COLORS.length);
       usedColors.add(color);
-      return { ...course, color };
+
+      // 첫 번째 meeting time 사용 (일반적으로 하나의 시간대)
+      const firstMeeting = course.meetingTimes[0];
+      const startHour = parseInt(firstMeeting.startTime.split(':')[0], 10);
+      const endHour = parseInt(firstMeeting.endTime.split(':')[0], 10);
+      const duration = endHour - startHour;
+
+      return {
+        id: course.courseId,
+        name: course.name,
+        code: course.courseId,
+        credits: course.credits,
+        professor: course.instructor || '',
+        type: course.deliveryType || course.category || 'OFFLINE',
+        day: dayToNumber[firstMeeting.day],
+        startHour,
+        duration,
+        color,
+      };
     });
 
     const warnings = generateWarnings(candidate, targetCredits, parsedConstraints);
@@ -330,7 +371,6 @@ export function buildRecommendationResponse(
       explanation,
       warnings,
       courses: coursesWithColor,
-      timetableGrid: candidate.timetableGrid || undefined,
     };
   });
 
