@@ -57,8 +57,14 @@ class AirtableService {
         .select({
           view: 'Grid view', // Adjust if needed
         })
-        .eachPage((pageRecords: AirtableRecord[], fetchNextPage: () => void) => {
-          records.push(...pageRecords);
+        .eachPage((pageRecords, fetchNextPage) => {
+          // Convert Airtable Records to our AirtableRecord type
+          for (const record of pageRecords) {
+            records.push({
+              id: record.id,
+              fields: record.fields,
+            });
+          }
           fetchNextPage();
         });
 
