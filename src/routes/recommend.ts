@@ -338,11 +338,28 @@ router.post('/', async (req: Request, res: Response) => {
       }
     }
 
-    // Get user major from request
-    const userMajor = requestData.user.major;
+    // Fetch all available courses (no major filter)
+    console.log('Fetching all courses (major filter disabled)');
+    const allCourses = await airtableService.getCourses();
+    console.log('Fetched courses:', allCourses.length);
     
-    // Fetch available courses
-    const allCourses = await airtableService.getCourses(userMajor);
+    if (allCourses.length === 0) {
+      console.warn('No courses found in Airtable');
+      // Return error response
+      res.status(400).json({
+        error: 'HARD 제약 조건 충돌',
+        details: {
+          reason: 'Airtable에서 강의 데이터를 찾을 수 없습니다.',
+          conflictingConstraints: ['강의 데이터 부재'],
+          suggestions: [
+            'Airtable에 강의 데이터가 있는지 확인해주세요',
+            'Airtable 연결 설정을 확인해주세요',
+            '관리자에게 문의해주세요'
+          ]
+        }
+      });
+      return;
+    }
 
     // Parse targetCredits: if it's a range like "15~18", use minimum
     let targetCredits: number;

@@ -33,19 +33,28 @@ class AirtableService {
       let courses = this.cache.data;
       
       // Apply filters
+      let filtered = courses;
       if (major) {
-        courses = courses.filter(c => c.major === major);
+        // More flexible major matching (partial match or exact match)
+        const majorLower = major.toLowerCase();
+        filtered = filtered.filter(c => {
+          const courseMajor = (c.major || '').toLowerCase();
+          return courseMajor === majorLower || 
+                 courseMajor.includes(majorLower) || 
+                 majorLower.includes(courseMajor);
+        });
       }
       if (query) {
         const lowerQuery = query.toLowerCase();
-        courses = courses.filter(c => 
+        filtered = filtered.filter(c => 
           c.name.toLowerCase().includes(lowerQuery) ||
           c.courseId.toLowerCase().includes(lowerQuery) ||
           c.tags.some(tag => tag.toLowerCase().includes(lowerQuery))
         );
       }
       
-      return courses;
+      console.log(`Airtable (cached): Filtered to ${filtered.length} courses (major: ${major || 'none'})`);
+      return filtered;
     }
 
     // Fetch from Airtable
@@ -71,6 +80,8 @@ class AirtableService {
       // Normalize records to Course objects
       const courses = records.map(record => this.normalizeRecord(record));
 
+      console.log(`Airtable: Fetched ${records.length} records, normalized to ${courses.length} courses`);
+
       // Update cache
       this.cache = {
         data: courses,
@@ -80,7 +91,14 @@ class AirtableService {
       // Apply filters
       let filtered = courses;
       if (major) {
-        filtered = filtered.filter(c => c.major === major);
+        // More flexible major matching (partial match or exact match)
+        const majorLower = major.toLowerCase();
+        filtered = filtered.filter(c => {
+          const courseMajor = (c.major || '').toLowerCase();
+          return courseMajor === majorLower || 
+                 courseMajor.includes(majorLower) || 
+                 majorLower.includes(courseMajor);
+        });
       }
       if (query) {
         const lowerQuery = query.toLowerCase();
@@ -91,10 +109,18 @@ class AirtableService {
         );
       }
 
+      console.log(`Airtable: Fetched ${courses.length} total courses, filtered to ${filtered.length} courses (major: ${major || 'none'})`);
       return filtered;
     } catch (error) {
-      console.error('Error fetching from Airtable:', error);
-      throw new Error('Failed to fetch courses from Airtable');
+      console.error('=== ERROR fetching from Airtable ===');
+      console.error('Error:', error);
+      console.error('Table name:', tableName);
+      console.error('Major filter:', major);
+      console.error('Query filter:', query);
+      
+      // Return empty array instead of throwing to allow graceful degradation
+      console.warn('Returning empty courses array due to Airtable error');
+      return [];
     }
   }
 
