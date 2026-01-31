@@ -5,6 +5,7 @@ import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import healthRouter from './routes/health';
 import coursesRouter from './routes/courses';
 import recommendRouter from './routes/recommend';
+import parseConditionRouter from './routes/parseCondition';
 
 // Load environment variables
 dotenv.config();
@@ -27,6 +28,7 @@ app.use((req, res, next) => {
 app.use('/health', healthRouter);
 app.use('/api/courses', coursesRouter);
 app.use('/api/recommend', recommendRouter);
+app.use('/api/parse-condition', parseConditionRouter);
 
 // 404 handler
 app.use(notFoundHandler);
