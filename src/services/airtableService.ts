@@ -132,8 +132,41 @@ class AirtableService {
     const fields = record.fields;
 
     // Parse meeting times - adjust field name as needed
-    const meetingTimeStr = fields.meetingTimes || fields['Meeting Times'] || fields['시간'] || '';
+    // Try multiple possible field names
+    let meetingTimeValue: any = fields.meetingTimes || 
+                                fields['Meeting Times'] || 
+                                fields['시간'] || 
+                                fields['시간표'] ||
+                                fields['schedule'] ||
+                                fields['Schedule'] ||
+                                fields['time'] ||
+                                fields['Time'] ||
+                                '';
+    
+    // Handle array format from Airtable
+    let meetingTimeStr = '';
+    if (Array.isArray(meetingTimeValue)) {
+      meetingTimeStr = meetingTimeValue.join(', ');
+    } else if (typeof meetingTimeValue === 'string') {
+      meetingTimeStr = meetingTimeValue;
+    } else if (meetingTimeValue && typeof meetingTimeValue === 'object') {
+      // Handle object format (e.g., {day: "월", time: "09:00-10:30"})
+      meetingTimeStr = JSON.stringify(meetingTimeValue);
+    }
+    
+    // Debug: log if meetingTimes is empty (only in development)
+    if (!meetingTimeStr) {
+      const courseName = fields.name || fields['Name'] || fields['과목명'] || record.id;
+      console.warn(`[WARNING] Course "${courseName}" has no meetingTimes field. Available fields:`, Object.keys(fields).slice(0, 10));
+    }
+    
     const meetingTimes = parseMeetingTimes(meetingTimeStr);
+    
+    // Debug: log if parsing failed
+    if (meetingTimeStr && meetingTimes.length === 0) {
+      const courseName = fields.name || fields['Name'] || fields['과목명'] || record.id;
+      console.warn(`[WARNING] Failed to parse meetingTimes for "${courseName}": "${meetingTimeStr}"`);
+    }
 
     // Parse tags - handle both string and array formats
     let tags: string[] = [];

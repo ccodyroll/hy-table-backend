@@ -404,6 +404,8 @@ export function buildRecommendationResponse(
       // 첫 번째 meeting time 사용 (일반적으로 하나의 시간대)
       // meetingTimes가 비어있을 수 있으므로 체크
       if (!course.meetingTimes || course.meetingTimes.length === 0) {
+        // meetingTimes가 없으면 경고 로그 출력
+        console.warn(`[WARNING] Course "${course.name}" (${course.courseId}) has no meetingTimes. Using default values.`);
         // meetingTimes가 없으면 기본값 사용
         return {
           id: course.courseId,

@@ -70,24 +70,68 @@ function normalizeTime(timeStr: string): string | null {
 /**
  * Parse meeting time string from Airtable
  * Examples: "월 09:00-10:30", "월/수 09:00-10:30", "월 09:00-10:30, 수 11:00-12:30"
+ * Also supports: "MON 09:00-10:30", "월요일 09:00-10:30", "월 9:00-10:30"
  */
 export function parseMeetingTimes(meetingTimeStr: string): TimeSlot[] {
-  if (!meetingTimeStr) return [];
+  if (!meetingTimeStr || typeof meetingTimeStr !== 'string') return [];
 
   const slots: TimeSlot[] = [];
-  const parts = meetingTimeStr.split(',').map(p => p.trim());
+  
+  // Normalize the string: remove extra whitespace
+  const normalized = meetingTimeStr.trim();
+  if (!normalized) return [];
+
+  // Split by comma first (for multiple time slots)
+  const parts = normalized.split(',').map(p => p.trim()).filter(p => p);
 
   for (const part of parts) {
-    // Match day(s) and time range
-    // Pattern: "월 09:00-10:30" or "월/수 09:00-10:30"
-    const dayTimeMatch = part.match(/^([월화수목금토일]+(?:\/[월화수목금토일]+)*)\s+(.+)$/);
-    if (!dayTimeMatch) continue;
+    // Try multiple patterns
+    
+    // Pattern 1: Korean day with time "월 09:00-10:30" or "월/수 09:00-10:30"
+    let dayTimeMatch = part.match(/^([월화수목금토일]+(?:\/[월화수목금토일]+)*)\s+(.+)$/);
+    
+    // Pattern 2: English day "MON 09:00-10:30" or "MON/WED 09:00-10:30"
+    if (!dayTimeMatch) {
+      dayTimeMatch = part.match(/^(MON|TUE|WED|THU|FRI|SAT|SUN)(?:\/(MON|TUE|WED|THU|FRI|SAT|SUN))?\s+(.+)$/i);
+      if (dayTimeMatch) {
+        // Convert English days to Korean format for parsing
+        const englishToKorean: Record<string, string> = {
+          'MON': '월', 'TUE': '화', 'WED': '수', 'THU': '목', 'FRI': '금', 'SAT': '토', 'SUN': '일'
+        };
+        const day1 = englishToKorean[dayTimeMatch[1].toUpperCase()];
+        const day2 = dayTimeMatch[2] ? englishToKorean[dayTimeMatch[2].toUpperCase()] : null;
+        dayTimeMatch = [dayTimeMatch[0], day2 ? `${day1}/${day2}` : day1, dayTimeMatch[3]];
+      }
+    }
+    
+    // Pattern 3: Korean day with 요일 suffix "월요일 09:00-10:30"
+    if (!dayTimeMatch) {
+      dayTimeMatch = part.match(/^([월화수목금토일]요일)(?:\/([월화수목금토일]요일))?\s+(.+)$/);
+      if (dayTimeMatch) {
+        const day1 = dayTimeMatch[1].replace('요일', '');
+        const day2 = dayTimeMatch[2] ? dayTimeMatch[2].replace('요일', '') : null;
+        dayTimeMatch = [dayTimeMatch[0], day2 ? `${day1}/${day2}` : day1, dayTimeMatch[3]];
+      }
+    }
+    
+    if (!dayTimeMatch) {
+      // Try to extract just time range if no day is specified (assume all days or skip)
+      const timeRange = parseTimeRange(part);
+      if (timeRange) {
+        // If only time is found, we can't determine the day, so skip
+        console.warn(`[WARNING] Found time range "${part}" but no day specified. Skipping.`);
+      }
+      continue;
+    }
 
     const daysStr = dayTimeMatch[1];
     const timeStr = dayTimeMatch[2];
 
     const timeRange = parseTimeRange(timeStr);
-    if (!timeRange) continue;
+    if (!timeRange) {
+      console.warn(`[WARNING] Failed to parse time range from "${timeStr}" in "${part}"`);
+      continue;
+    }
 
     // Handle multiple days separated by /
     const dayParts = daysStr.split('/');
@@ -99,6 +143,8 @@ export function parseMeetingTimes(meetingTimeStr: string): TimeSlot[] {
           startTime: timeRange.start,
           endTime: timeRange.end,
         });
+      } else {
+        console.warn(`[WARNING] Failed to parse day from "${dayPart}" in "${part}"`);
       }
     }
   }
