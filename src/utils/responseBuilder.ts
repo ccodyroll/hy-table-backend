@@ -282,13 +282,36 @@ export function generateFailureExplanation(
     suggestions.push('차단 시간을 줄이거나 조정해주세요');
   }
 
-  if (parsedConstraints.avoidDays && parsedConstraints.avoidDays.length > 0) {
+  // Check hard constraints (these are filtered, so if no candidates, they likely caused the issue)
+  const hardConstraints = parsedConstraints.hardConstraints || {};
+  
+  if (hardConstraints.avoidDays && hardConstraints.avoidDays.length > 0) {
+    conflictingConstraints.push('회피 요일 (HARD)');
+    const dayLabels: Record<DayOfWeek, string> = {
+      'MON': '월요일', 'TUE': '화요일', 'WED': '수요일',
+      'THU': '목요일', 'FRI': '금요일', 'SAT': '토요일', 'SUN': '일요일'
+    };
+    suggestions.push(`회피 요일(${hardConstraints.avoidDays.map((d: DayOfWeek) => dayLabels[d]).join(', ')})을 SOFT 제약으로 변경하거나 해제`);
+  }
+  
+  if (hardConstraints.avoidMorning) {
+    conflictingConstraints.push('아침 수업 회피 (HARD)');
+    suggestions.push('아침 수업 회피를 SOFT 제약으로 변경하거나 해제');
+  }
+  
+  if (hardConstraints.keepLunchTime) {
+    conflictingConstraints.push('점심시간 보호 (HARD)');
+    suggestions.push('점심시간 보호를 SOFT 제약으로 변경하거나 해제');
+  }
+  
+  // Also check soft constraints (for backward compatibility)
+  if (parsedConstraints.avoidDays && parsedConstraints.avoidDays.length > 0 && !hardConstraints.avoidDays) {
     conflictingConstraints.push('회피 요일');
     const dayLabels: Record<DayOfWeek, string> = {
       'MON': '월요일', 'TUE': '화요일', 'WED': '수요일',
       'THU': '목요일', 'FRI': '금요일', 'SAT': '토요일', 'SUN': '일요일'
     };
-    suggestions.push(`회피 요일(${parsedConstraints.avoidDays.map((d: DayOfWeek) => dayLabels[d]).join(', ')})을 SOFT 제약으로 변경`);
+    suggestions.push(`회피 요일(${parsedConstraints.avoidDays.map((d: DayOfWeek) => dayLabels[d]).join(', ')})을 해제`);
   }
 
   if (requestBody.basket && requestBody.basket.length > 0) {

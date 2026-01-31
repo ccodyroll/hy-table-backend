@@ -41,6 +41,32 @@ class SchedulerService {
     // (This is approximate - some courses might be filtered for multiple reasons)
     const filteredByBlockedTimesCount = initialCourseCount - validCourses.length;
 
+    // Check if we have enough valid courses to satisfy hard constraints
+    // If no valid courses or not enough credits available, return empty candidates
+    if (validCourses.length === 0) {
+      console.warn('No valid courses after applying HARD constraints');
+      return {
+        candidates: [],
+        debug: {
+          candidatesGenerated: 0,
+          combinationsFilteredByBlockedTimes: filteredByBlockedTimesCount,
+        },
+      };
+    }
+
+    // Check if we can potentially reach target credits with available courses
+    const maxAvailableCredits = validCourses.reduce((sum, course) => sum + course.credits, 0);
+    if (maxAvailableCredits < remainingTargetCreditsMin) {
+      console.warn(`Cannot satisfy target credits: need ${remainingTargetCreditsMin}, but only ${maxAvailableCredits} available`);
+      return {
+        candidates: [],
+        debug: {
+          candidatesGenerated: 0,
+          combinationsFilteredByBlockedTimes: filteredByBlockedTimesCount,
+        },
+      };
+    }
+
     // Sort courses based on strategy and constraints to prioritize relevant courses
     // This ensures different conditions produce different timetables
     validCourses = this.sortCoursesByPriority(validCourses, strategy, tracks, interests, softConstraints);
