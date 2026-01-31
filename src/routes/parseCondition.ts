@@ -197,14 +197,22 @@ router.post('/', async (req: Request, res: Response) => {
           endTime = `${endHour.toString().padStart(2, '0')}:${endMin.toString().padStart(2, '0')}`;
         }
       } else {
-        // Pattern 2: "N-N시" format (e.g., "월요일 7-9시 안 됨" or "월 7-9시")
-        const timePattern2 = /(MON|TUE|WED|THU|FRI|SAT|SUN|월요일|화요일|수요일|목요일|금요일|토요일|일요일|월|화|수|목|금|토|일)\s+(\d{1,2})\s*[-~]\s*(\d{1,2})시?/i;
-        const match2 = parsedConstraints.notes.match(timePattern2);
+        // Pattern 2a: "오후/오전 N-N시" format (e.g., "월요일 오후 5-7시" or "월 오전 9-10시")
+        const timePattern2a = /(MON|TUE|WED|THU|FRI|SAT|SUN|월요일|화요일|수요일|목요일|금요일|토요일|일요일|월|화|수|목|금|토|일)\s+(오전|오후)\s+(\d{1,2})\s*[-~]\s*(\d{1,2})시?/i;
+        const match2a = parsedConstraints.notes.match(timePattern2a);
         
-        if (match2) {
-          const dayStr = match2[1];
-          const startHour = parseInt(match2[2], 10);
-          const endHour = parseInt(match2[3], 10);
+        if (match2a) {
+          const dayStr = match2a[1];
+          const ampm = match2a[2]; // "오전" or "오후"
+          let startHour = parseInt(match2a[3], 10);
+          let endHour = parseInt(match2a[4], 10);
+          
+          // Convert to 24-hour format
+          if (ampm === '오후' && startHour !== 12) startHour += 12;
+          if (ampm === '오전' && startHour === 12) startHour = 0;
+          // endHour도 같은 오전/오후를 사용한다고 가정
+          if (ampm === '오후' && endHour !== 12) endHour += 12;
+          if (ampm === '오전' && endHour === 12) endHour = 0;
           
           day = parseKoreanDay(dayStr);
           if (!day && ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].includes(dayStr.toUpperCase())) {
@@ -216,35 +224,55 @@ router.post('/', async (req: Request, res: Response) => {
             endTime = `${endHour.toString().padStart(2, '0')}:00`;
           }
         } else {
-          // Pattern 3: English format with AM/PM (e.g., "Monday 3 PM - 8 PM" or "MON 3 PM - 8 PM")
-          // Reason text is ignored, only time is extracted
-          const timePattern3 = /(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|MON|TUE|WED|THU|FRI|SAT|SUN)\s+(\d{1,2})\s*(AM|PM)\s*[-~]\s*(\d{1,2})\s*(AM|PM)/i;
-          const match3 = parsedConstraints.notes.match(timePattern3);
+          // Pattern 2b: "N-N시" format (e.g., "월요일 7-9시 안 됨" or "월 7-9시")
+          const timePattern2b = /(MON|TUE|WED|THU|FRI|SAT|SUN|월요일|화요일|수요일|목요일|금요일|토요일|일요일|월|화|수|목|금|토|일)\s+(\d{1,2})\s*[-~]\s*(\d{1,2})시?/i;
+          const match2b = parsedConstraints.notes.match(timePattern2b);
           
-          if (match3) {
-            const dayStr = match3[1];
-            let startHour = parseInt(match3[2], 10);
-            const startAMPM = match3[3].toUpperCase();
-            let endHour = parseInt(match3[4], 10);
-            const endAMPM = match3[5].toUpperCase();
+          if (match2b) {
+            const dayStr = match2b[1];
+            const startHour = parseInt(match2b[2], 10);
+            const endHour = parseInt(match2b[3], 10);
             
-            // Convert to 24-hour format
-            if (startAMPM === 'PM' && startHour !== 12) startHour += 12;
-            if (startAMPM === 'AM' && startHour === 12) startHour = 0;
-            if (endAMPM === 'PM' && endHour !== 12) endHour += 12;
-            if (endAMPM === 'AM' && endHour === 12) endHour = 0;
-            
-            // Parse day (English full names and abbreviations)
-            const dayMap: Record<string, DayOfWeek> = {
-              'Monday': 'MON', 'Tuesday': 'TUE', 'Wednesday': 'WED',
-              'Thursday': 'THU', 'Friday': 'FRI', 'Saturday': 'SAT', 'Sunday': 'SUN'
-            };
-            day = dayMap[dayStr] || (['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].includes(dayStr.toUpperCase()) 
-              ? dayStr.toUpperCase() as DayOfWeek : null);
+            day = parseKoreanDay(dayStr);
+            if (!day && ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].includes(dayStr.toUpperCase())) {
+              day = dayStr.toUpperCase() as DayOfWeek;
+            }
             
             if (day && startHour >= 0 && startHour <= 23 && endHour >= 0 && endHour <= 23 && startHour < endHour) {
               startTime = `${startHour.toString().padStart(2, '0')}:00`;
               endTime = `${endHour.toString().padStart(2, '0')}:00`;
+            }
+          } else {
+            // Pattern 3: English format with AM/PM (e.g., "Monday 3 PM - 8 PM" or "MON 3 PM - 8 PM")
+            // Reason text is ignored, only time is extracted
+            const timePattern3 = /(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|MON|TUE|WED|THU|FRI|SAT|SUN)\s+(\d{1,2})\s*(AM|PM)\s*[-~]\s*(\d{1,2})\s*(AM|PM)/i;
+            const match3 = parsedConstraints.notes.match(timePattern3);
+            
+            if (match3) {
+              const dayStr = match3[1];
+              let startHour = parseInt(match3[2], 10);
+              const startAMPM = match3[3].toUpperCase();
+              let endHour = parseInt(match3[4], 10);
+              const endAMPM = match3[5].toUpperCase();
+              
+              // Convert to 24-hour format
+              if (startAMPM === 'PM' && startHour !== 12) startHour += 12;
+              if (startAMPM === 'AM' && startHour === 12) startHour = 0;
+              if (endAMPM === 'PM' && endHour !== 12) endHour += 12;
+              if (endAMPM === 'AM' && endHour === 12) endHour = 0;
+              
+              // Parse day (English full names and abbreviations)
+              const dayMap: Record<string, DayOfWeek> = {
+                'Monday': 'MON', 'Tuesday': 'TUE', 'Wednesday': 'WED',
+                'Thursday': 'THU', 'Friday': 'FRI', 'Saturday': 'SAT', 'Sunday': 'SUN'
+              };
+              day = dayMap[dayStr] || (['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].includes(dayStr.toUpperCase()) 
+                ? dayStr.toUpperCase() as DayOfWeek : null);
+              
+              if (day && startHour >= 0 && startHour <= 23 && endHour >= 0 && endHour <= 23 && startHour < endHour) {
+                startTime = `${startHour.toString().padStart(2, '0')}:00`;
+                endTime = `${endHour.toString().padStart(2, '0')}:00`;
+              }
             }
           }
         }
