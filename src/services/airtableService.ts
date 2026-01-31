@@ -132,9 +132,15 @@ class AirtableService {
     const fields = record.fields;
 
     // Parse meeting times - adjust field name as needed
-    // Try multiple possible field names
+    // Try multiple possible field names (case-insensitive search)
+    const courseName = fields.name || fields['Name'] || fields['과목명'] || record.id;
+    const allFieldKeys = Object.keys(fields);
+    
+    // Try exact matches first
     let meetingTimeValue: any = fields.meetingTimes || 
                                 fields['Meeting Times'] || 
+                                fields['meeting_times'] ||
+                                fields['meetingTimes'] ||
                                 fields['시간'] || 
                                 fields['시간표'] ||
                                 fields['schedule'] ||
@@ -142,6 +148,24 @@ class AirtableService {
                                 fields['time'] ||
                                 fields['Time'] ||
                                 '';
+    
+    // If not found, try case-insensitive search
+    if (!meetingTimeValue) {
+      const timeFieldKeys = allFieldKeys.filter(key => {
+        const lowerKey = key.toLowerCase();
+        return lowerKey.includes('time') || 
+               lowerKey.includes('시간') || 
+               lowerKey.includes('schedule') ||
+               lowerKey.includes('시간표') ||
+               lowerKey.includes('meeting');
+      });
+      
+      if (timeFieldKeys.length > 0) {
+        // Try the first matching field
+        meetingTimeValue = fields[timeFieldKeys[0]];
+        console.log(`[INFO] Found potential time field "${timeFieldKeys[0]}" for course "${courseName}":`, meetingTimeValue);
+      }
+    }
     
     // Handle array format from Airtable
     let meetingTimeStr = '';
@@ -154,10 +178,16 @@ class AirtableService {
       meetingTimeStr = JSON.stringify(meetingTimeValue);
     }
     
-    // Debug: log if meetingTimes is empty (only in development)
+    // Debug: log if meetingTimes is empty
     if (!meetingTimeStr) {
-      const courseName = fields.name || fields['Name'] || fields['과목명'] || record.id;
-      console.warn(`[WARNING] Course "${courseName}" has no meetingTimes field. Available fields:`, Object.keys(fields).slice(0, 10));
+      console.warn(`[WARNING] Course "${courseName}" (${record.id}) has no meetingTimes field.`);
+      console.warn(`  Available fields:`, allFieldKeys);
+      console.warn(`  Sample field values (first 5):`, 
+        allFieldKeys.slice(0, 5).reduce((acc, key) => {
+          acc[key] = typeof fields[key] === 'string' ? fields[key].substring(0, 50) : fields[key];
+          return acc;
+        }, {} as Record<string, any>)
+      );
     }
     
     const meetingTimes = parseMeetingTimes(meetingTimeStr);
