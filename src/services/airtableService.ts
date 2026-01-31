@@ -137,7 +137,9 @@ class AirtableService {
     const allFieldKeys = Object.keys(fields);
     
     // Try exact matches first
-    let meetingTimeValue: any = fields.meetingTimes || 
+    let meetingTimeValue: any = fields['요일_시간'] ||
+                                fields['요일 시간'] ||
+                                fields.meetingTimes || 
                                 fields['Meeting Times'] || 
                                 fields['meeting_times'] ||
                                 fields['meetingTimes'] ||
@@ -153,7 +155,8 @@ class AirtableService {
     if (!meetingTimeValue) {
       const timeFieldKeys = allFieldKeys.filter(key => {
         const lowerKey = key.toLowerCase();
-        return lowerKey.includes('time') || 
+        return lowerKey.includes('요일') ||
+               lowerKey.includes('time') || 
                lowerKey.includes('시간') || 
                lowerKey.includes('schedule') ||
                lowerKey.includes('시간표') ||

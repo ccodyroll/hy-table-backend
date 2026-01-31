@@ -69,8 +69,10 @@ function normalizeTime(timeStr: string): string | null {
 
 /**
  * Parse meeting time string from Airtable
- * Examples: "월 09:00-10:30", "월/수 09:00-10:30", "월 09:00-10:30, 수 11:00-12:30"
- * Also supports: "MON 09:00-10:30", "월요일 09:00-10:30", "월 9:00-10:30"
+ * Examples: 
+ * - "월 09:00-10:30", "월/수 09:00-10:30", "월 09:00-10:30, 수 11:00-12:30"
+ * - "수(15:00-17:00)" (Airtable format)
+ * - "MON 09:00-10:30", "월요일 09:00-10:30", "월 9:00-10:30"
  */
 export function parseMeetingTimes(meetingTimeStr: string): TimeSlot[] {
   if (!meetingTimeStr || typeof meetingTimeStr !== 'string') return [];
@@ -87,8 +89,31 @@ export function parseMeetingTimes(meetingTimeStr: string): TimeSlot[] {
   for (const part of parts) {
     // Try multiple patterns
     
+    // Pattern 0: Airtable format "수(15:00-17:00)" or "월(09:00-10:30), 수(15:00-17:00)"
+    let dayTimeMatch = part.match(/^([월화수목금토일]+)\((.+)\)$/);
+    if (dayTimeMatch) {
+      const daysStr = dayTimeMatch[1];
+      const timeStr = dayTimeMatch[2];
+      const timeRange = parseTimeRange(timeStr);
+      if (timeRange) {
+        // Handle multiple days separated by / or comma
+        const dayParts = daysStr.split(/[/,]/).map(d => d.trim());
+        for (const dayPart of dayParts) {
+          const day = parseKoreanDay(dayPart);
+          if (day) {
+            slots.push({
+              day,
+              startTime: timeRange.start,
+              endTime: timeRange.end,
+            });
+          }
+        }
+        continue; // Successfully parsed, move to next part
+      }
+    }
+    
     // Pattern 1: Korean day with time "월 09:00-10:30" or "월/수 09:00-10:30"
-    let dayTimeMatch = part.match(/^([월화수목금토일]+(?:\/[월화수목금토일]+)*)\s+(.+)$/);
+    dayTimeMatch = part.match(/^([월화수목금토일]+(?:\/[월화수목금토일]+)*)\s+(.+)$/);
     
     // Pattern 2: English day "MON 09:00-10:30" or "MON/WED 09:00-10:30"
     if (!dayTimeMatch) {
