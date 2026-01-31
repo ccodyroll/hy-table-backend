@@ -75,6 +75,7 @@ class SchedulerService {
 
   /**
    * Filter courses that don't conflict with fixed lectures or blocked times
+   * Also exclude courses with empty or missing meetingTimes
    */
   private filterValidCourses(
     courses: Course[],
@@ -83,6 +84,11 @@ class SchedulerService {
     constraints: UserConstraints
   ): Course[] {
     return courses.filter(course => {
+      // Exclude courses with no meetingTimes (요일_시간이 비어있는 경우)
+      if (!course.meetingTimes || course.meetingTimes.length === 0) {
+        return false;
+      }
+
       // Check conflicts with fixed lectures
       for (const fixed of fixedLectures) {
         for (const courseSlot of course.meetingTimes) {
