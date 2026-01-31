@@ -24,11 +24,15 @@ const parseConditionSchema = z.object({
  * Response: { "conditions": [{ "type": "...", "label": "...", "value": "..." }] }
  */
 router.post('/', async (req: Request, res: Response) => {
+  console.log('=== /api/parse-condition called ===');
+  console.log('Request body:', JSON.stringify(req.body, null, 2));
+  
   try {
     // Validate request
     const validationResult = parseConditionSchema.safeParse(req.body);
     
     if (!validationResult.success) {
+      console.error('Validation failed:', validationResult.error.errors);
       res.status(400).json({
         error: {
           message: 'Invalid request data',
@@ -39,8 +43,11 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     const { input, currentConditions } = validationResult.data;
+    console.log('Validated input:', input);
+    console.log('Current conditions:', JSON.stringify(currentConditions, null, 2));
 
     if (!input || input.trim().length === 0) {
+      console.warn('Input is empty');
       res.status(400).json({
         error: {
           message: 'Input cannot be empty',
@@ -50,10 +57,13 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     // Parse constraints using Gemini
+    console.log('Calling geminiService.parseConstraints with input:', input.trim());
     const parsedConstraints = await geminiService.parseConstraints(input.trim());
+    console.log('Parsed constraints result:', parsedConstraints ? JSON.stringify(parsedConstraints, null, 2) : 'null');
 
     if (!parsedConstraints) {
       // If Gemini fails or is not available, return empty conditions
+      console.warn('Gemini returned null - returning empty conditions');
       res.json({
         conditions: [],
       });
@@ -154,11 +164,15 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     // Return conditions in frontend format
+    console.log('Returning conditions:', JSON.stringify(conditions, null, 2));
     res.json({
       conditions,
     });
   } catch (error: any) {
-    console.error('Error parsing conditions:', error);
+    console.error('=== ERROR in /api/parse-condition ===');
+    console.error('Error message:', error?.message);
+    console.error('Error stack:', error?.stack);
+    console.error('Error details:', error);
     res.status(500).json({
       error: {
         message: 'Failed to parse conditions',

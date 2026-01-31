@@ -20,12 +20,26 @@ class GeminiService {
    * Parse Korean natural language constraints to structured format
    */
   async parseConstraints(freeText: string): Promise<UserConstraints | null> {
+    console.log('=== geminiService.parseConstraints called ===');
+    console.log('Input text:', freeText);
+    console.log('GEMINI_API_KEY exists:', !!process.env.GEMINI_API_KEY);
+    console.log('genAI instance exists:', !!this.genAI);
+    console.log('Model name:', this.modelName);
+    
     if (!this.genAI || !freeText || !freeText.trim()) {
+      console.warn('Gemini AI not initialized or empty input - returning null');
+      if (!this.genAI) {
+        console.warn('Reason: genAI is null (GEMINI_API_KEY not set)');
+      }
+      if (!freeText || !freeText.trim()) {
+        console.warn('Reason: freeText is empty');
+      }
       return null;
     }
 
     try {
       const model = this.genAI.getGenerativeModel({ model: this.modelName });
+      console.log('Using model:', this.modelName);
 
       const prompt = `You are a constraint parser for a university timetable scheduler. Parse the following Korean user request into structured JSON constraints.
 
@@ -59,23 +73,36 @@ Output JSON schema:
 
 Output JSON only:`;
 
+      console.log('Calling Gemini API with prompt length:', prompt.length);
       const result = await model.generateContent(prompt);
       const response = result.response;
       const text = response.text().trim();
+      console.log('Gemini response text (first 500 chars):', text.substring(0, 500));
 
       // Extract JSON from response (handle markdown code blocks if present)
       let jsonStr = text;
       const jsonMatch = text.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/);
       if (jsonMatch) {
+        console.log('Found JSON in markdown code block');
         jsonStr = jsonMatch[1];
+      } else {
+        console.log('Using raw text as JSON');
       }
 
+      console.log('Attempting to parse JSON:', jsonStr.substring(0, 200));
       const constraints = JSON.parse(jsonStr) as UserConstraints;
+      console.log('Successfully parsed constraints:', JSON.stringify(constraints, null, 2));
 
       // Validate and sanitize
-      return this.sanitizeConstraints(constraints);
+      const sanitized = this.sanitizeConstraints(constraints);
+      console.log('Sanitized constraints:', JSON.stringify(sanitized, null, 2));
+      return sanitized;
     } catch (error) {
-      console.error('Error parsing constraints with Gemini:', error);
+      console.error('=== ERROR in geminiService.parseConstraints ===');
+      console.error('Error type:', error instanceof Error ? error.constructor.name : typeof error);
+      console.error('Error message:', error instanceof Error ? error.message : String(error));
+      console.error('Error stack:', error instanceof Error ? error.stack : undefined);
+      console.error('Full error object:', error);
       return null; // Fail gracefully
     }
   }
