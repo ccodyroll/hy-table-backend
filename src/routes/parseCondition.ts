@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import geminiService from '../services/geminiService';
 import { z } from 'zod';
+import { DayOfWeek } from '../types';
+import { parseKoreanDay, isValidTimeFormat, isValidTimeRange } from '../utils/timeParser';
 
 const router = Router();
 
@@ -161,6 +163,51 @@ router.post('/', async (req: Request, res: Response) => {
         label: `${dayNames} 온라인만`,
         value: `online_only_${parsedConstraints.preferOnlineOnlyDays.join('_')}`,
       });
+    }
+
+    // Parse notes field for blocked times (e.g., "MON 18:00-19:00 unavailable" or "월요일 18:00-19:00 알바")
+    if (parsedConstraints.notes) {
+      // Pattern: "MON 18:00-19:00 unavailable" or "월요일 18:00-19:00 알바" or "화 18:00-21:00"
+      const notesPattern = /(MON|TUE|WED|THU|FRI|SAT|SUN|월요일|화요일|수요일|목요일|금요일|토요일|일요일|월|화|수|목|금|토|일)\s+(\d{1,2}):(\d{2})\s*[-~]\s*(\d{1,2}):(\d{2})/i;
+      const match = parsedConstraints.notes.match(notesPattern);
+      
+      if (match) {
+        const dayStr = match[1];
+        const startHour = parseInt(match[2], 10);
+        const startMin = parseInt(match[3], 10);
+        const endHour = parseInt(match[4], 10);
+        const endMin = parseInt(match[5], 10);
+        
+        // Parse day
+        let day: DayOfWeek | null = parseKoreanDay(dayStr);
+        if (!day && ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].includes(dayStr.toUpperCase())) {
+          day = dayStr.toUpperCase() as DayOfWeek;
+        }
+        
+        if (day) {
+          const startTime = `${startHour.toString().padStart(2, '0')}:${startMin.toString().padStart(2, '0')}`;
+          const endTime = `${endHour.toString().padStart(2, '0')}:${endMin.toString().padStart(2, '0')}`;
+          
+          // Validate time format and range
+          if (isValidTimeFormat(startTime) && isValidTimeFormat(endTime) && isValidTimeRange(startTime, endTime)) {
+            const dayLabels: Record<DayOfWeek, string> = {
+              'MON': '월요일',
+              'TUE': '화요일',
+              'WED': '수요일',
+              'THU': '목요일',
+              'FRI': '금요일',
+              'SAT': '토요일',
+              'SUN': '일요일',
+            };
+            
+            conditions.push({
+              type: '시간 제약',
+              label: `${dayLabels[day]} ${startTime}-${endTime} 불가`,
+              value: `blocked_${day}_${startTime.replace(':', '')}_${endTime.replace(':', '')}`,
+            });
+          }
+        }
+      }
     }
 
     // Return conditions in frontend format
