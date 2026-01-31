@@ -119,7 +119,39 @@ class SchedulerService {
         }
       }
 
-      // NOTE: SOFT constraints (avoidDays, avoidMorning, keepLunchTime, avoidTeamProjects)
+      // Apply HARD constraints (these should filter out courses)
+      // Note: If constraints object contains hardConstraints, use those; otherwise check if these are marked as HARD
+      if (constraints.avoidDays && constraints.avoidDays.length > 0) {
+        // Check if course has any meeting time on avoided days
+        const hasAvoidedDay = course.meetingTimes.some(slot => 
+          constraints.avoidDays!.includes(slot.day)
+        );
+        if (hasAvoidedDay) {
+          return false; // Filter out courses on avoided days (HARD constraint)
+        }
+      }
+
+      if (constraints.avoidMorning) {
+        // Check if course has any morning meeting time
+        const hasMorningTime = course.meetingTimes.some(slot => 
+          isMorningTime(slot.startTime)
+        );
+        if (hasMorningTime) {
+          return false; // Filter out morning courses (HARD constraint)
+        }
+      }
+
+      if (constraints.keepLunchTime) {
+        // Check if course overlaps with lunch time (12:00-13:00)
+        const overlapsLunch = course.meetingTimes.some(slot => 
+          overlapsLunchTime(slot)
+        );
+        if (overlapsLunch) {
+          return false; // Filter out courses that overlap lunch time (HARD constraint)
+        }
+      }
+
+      // NOTE: SOFT constraints (avoidTeamProjects, preferOnlineClasses, etc.)
       // are NOT filtered here. They are only used for scoring later.
       // This allows the algorithm to generate candidates even if they violate SOFT constraints,
       // and then rank them lower based on how well they satisfy SOFT constraints.
