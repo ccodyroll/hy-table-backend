@@ -327,12 +327,36 @@ export function buildRecommendationResponse(
   console.log('Target credits:', targetCredits);
   console.log('Parsed constraints:', JSON.stringify(parsedConstraints, null, 2));
 
+  // Helper: Convert day number (0~5) to DayOfWeek
+  const dayNumberToDayOfWeek = (dayNum: number): DayOfWeek => {
+    const days: DayOfWeek[] = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+    return days[dayNum] || 'MON';
+  };
+
+  // Helper: Convert startHour (0~13) to HH:mm format (0=09:00, 1=10:00, ..., 13=22:00)
+  const startHourToTime = (startHour: number): string => {
+    const hour = 9 + startHour; // 0=09:00, 1=10:00, ..., 13=22:00
+    return `${hour.toString().padStart(2, '0')}:00`;
+  };
+
   // HARD 제약 만족 후보 필터링
-  const blockedTimes = (requestBody.blockedTimes || []).map((bt: any) => ({
-    day: bt.day as DayOfWeek,
-    startTime: bt.startTime || bt.start,
-    endTime: bt.endTime || bt.end,
-  })).filter((bt: any) => bt.day && bt.startTime && bt.endTime) as BlockedTime[];
+  const blockedTimes = (requestBody.blockedTimes || []).map((bt: any) => {
+    // New format: day, start, end are numbers (0~13)
+    if (typeof bt.day === 'number' && typeof bt.start === 'number' && typeof bt.end === 'number') {
+      return {
+        day: dayNumberToDayOfWeek(bt.day),
+        startTime: startHourToTime(bt.start),
+        endTime: startHourToTime(bt.end),
+      };
+    }
+    
+    // Old format: already converted strings
+    return {
+      day: bt.day as DayOfWeek,
+      startTime: bt.startTime || bt.start,
+      endTime: bt.endTime || bt.end,
+    };
+  }).filter((bt: any) => bt.day && bt.startTime && bt.endTime) as BlockedTime[];
 
   console.log('Blocked times:', JSON.stringify(blockedTimes, null, 2));
 
