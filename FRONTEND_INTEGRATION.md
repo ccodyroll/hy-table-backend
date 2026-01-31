@@ -29,19 +29,57 @@ export default API_BASE_URL;
 
 ## API Client Examples
 
-### 1. Health Check
+### 1. Health Check (First Load)
+
+**프론트엔드 첫 로드 시 백엔드 연결 확인:**
 
 ```typescript
+/**
+ * Check backend health on app initialization
+ * Timeout: 60 seconds
+ */
 async function checkHealth(): Promise<boolean> {
   try {
-    const response = await fetch(`${API_BASE_URL}/health`);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
+
+    const response = await fetch(`${API_BASE_URL}/health`, {
+      method: 'GET',
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      return false;
+    }
+
     const data = await response.json();
     return data.ok === true;
   } catch (error) {
-    console.error('Health check failed:', error);
+    if (error instanceof Error && error.name === 'AbortError') {
+      console.error('Health check timeout after 60 seconds');
+    } else {
+      console.error('Health check failed:', error);
+    }
     return false;
   }
 }
+
+// Usage: Call on app initialization
+// Example in React:
+useEffect(() => {
+  checkHealth().then(isHealthy => {
+    if (isHealthy) {
+      console.log('✅ Backend is ready');
+    } else {
+      console.warn('⚠️ Backend is not available');
+    }
+  });
+}, []);
 ```
 
 ### 2. Fetch Courses
@@ -204,6 +242,108 @@ const request: RecommendationRequest = {
 
 const recommendations = await generateRecommendations(request);
 console.log('Top recommendation:', recommendations[0]);
+```
+
+## App Initialization with Health Check
+
+### First Load Health Check
+
+프론트엔드 앱이 처음 로드될 때 백엔드 연결을 확인합니다:
+
+```typescript
+// App.tsx or main entry point
+import { useEffect, useState } from 'react';
+
+function App() {
+  const [backendReady, setBackendReady] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    // Health check on app initialization
+    const checkBackend = async () => {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
+
+        const response = await fetch(`${API_BASE_URL}/health`, {
+          method: 'GET',
+          signal: controller.signal,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+
+        clearTimeout(timeoutId);
+
+        if (response.ok) {
+          const data = await response.json();
+          setBackendReady(data.ok === true);
+        } else {
+          setBackendReady(false);
+        }
+      } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') {
+          console.error('Health check timeout after 60 seconds');
+        } else {
+          console.error('Health check failed:', error);
+        }
+        setBackendReady(false);
+      }
+    };
+
+    checkBackend();
+  }, []);
+
+  if (backendReady === null) {
+    return <div>백엔드 연결 확인 중...</div>;
+  }
+
+  if (backendReady === false) {
+    return <div>⚠️ 백엔드 서버에 연결할 수 없습니다.</div>;
+  }
+
+  return (
+    <div>
+      {/* Your app content */}
+    </div>
+  );
+}
+```
+
+### Health Check with Retry
+
+재시도 로직이 포함된 버전:
+
+```typescript
+async function checkHealthWithRetry(maxRetries = 3, timeout = 60000): Promise<boolean> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+      const response = await fetch(`${API_BASE_URL}/health`, {
+        method: 'GET',
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.ok) {
+          return true;
+        }
+      }
+    } catch (error) {
+      if (attempt === maxRetries) {
+        console.error(`Health check failed after ${maxRetries} attempts:`, error);
+        return false;
+      }
+      // Wait before retry (exponential backoff)
+      await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+    }
+  }
+  return false;
+}
 ```
 
 ## React Hook Examples

@@ -4,13 +4,11 @@ const router = Router();
 
 /**
  * GET /health
- * Health check endpoint
+ * Lightweight health check endpoint (200 OK)
  */
 router.get('/', (req: Request, res: Response) => {
-  res.json({
+  res.status(200).json({
     ok: true,
-    version: '1.0.0',
-    timestamp: new Date().toISOString(),
   });
 });
 
