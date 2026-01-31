@@ -166,10 +166,11 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     // Parse notes field for blocked times
-    // Supports formats:
+    // Supports formats (reason text is ignored, only time is extracted):
     // - "월요일 18:00-19:00 알바" (HH:MM-HH:MM)
     // - "월요일 7-9시 안 됨" (N-N시)
     // - "MON 18:00-19:00 unavailable"
+    // - "Monday 3 PM - 8 PM is unavailable for classes due to part-time job" (English AM/PM)
     if (parsedConstraints.notes) {
       let day: DayOfWeek | null = null;
       let startTime: string | null = null;
@@ -214,10 +215,43 @@ router.post('/', async (req: Request, res: Response) => {
             startTime = `${startHour.toString().padStart(2, '0')}:00`;
             endTime = `${endHour.toString().padStart(2, '0')}:00`;
           }
+        } else {
+          // Pattern 3: English format with AM/PM (e.g., "Monday 3 PM - 8 PM" or "MON 3 PM - 8 PM")
+          // Reason text is ignored, only time is extracted
+          const timePattern3 = /(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|MON|TUE|WED|THU|FRI|SAT|SUN)\s+(\d{1,2})\s*(AM|PM)\s*[-~]\s*(\d{1,2})\s*(AM|PM)/i;
+          const match3 = parsedConstraints.notes.match(timePattern3);
+          
+          if (match3) {
+            const dayStr = match3[1];
+            let startHour = parseInt(match3[2], 10);
+            const startAMPM = match3[3].toUpperCase();
+            let endHour = parseInt(match3[4], 10);
+            const endAMPM = match3[5].toUpperCase();
+            
+            // Convert to 24-hour format
+            if (startAMPM === 'PM' && startHour !== 12) startHour += 12;
+            if (startAMPM === 'AM' && startHour === 12) startHour = 0;
+            if (endAMPM === 'PM' && endHour !== 12) endHour += 12;
+            if (endAMPM === 'AM' && endHour === 12) endHour = 0;
+            
+            // Parse day (English full names and abbreviations)
+            const dayMap: Record<string, DayOfWeek> = {
+              'Monday': 'MON', 'Tuesday': 'TUE', 'Wednesday': 'WED',
+              'Thursday': 'THU', 'Friday': 'FRI', 'Saturday': 'SAT', 'Sunday': 'SUN'
+            };
+            day = dayMap[dayStr] || (['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].includes(dayStr.toUpperCase()) 
+              ? dayStr.toUpperCase() as DayOfWeek : null);
+            
+            if (day && startHour >= 0 && startHour <= 23 && endHour >= 0 && endHour <= 23 && startHour < endHour) {
+              startTime = `${startHour.toString().padStart(2, '0')}:00`;
+              endTime = `${endHour.toString().padStart(2, '0')}:00`;
+            }
+          }
         }
       }
       
       // If we successfully parsed day and times, add to conditions
+      // Same time slot always generates same value regardless of reason text
       if (day && startTime && endTime) {
         // Validate time format and range
         if (isValidTimeFormat(startTime) && isValidTimeFormat(endTime) && isValidTimeRange(startTime, endTime)) {
@@ -231,6 +265,8 @@ router.post('/', async (req: Request, res: Response) => {
             'SUN': '일요일',
           };
           
+          // Value is based only on day and time, not reason
+          // "월요일 3-8시 알바" and "Monday 3 PM - 8 PM part-time job" both become "blocked_MON_1500_2000"
           conditions.push({
             type: '시간 제약',
             label: `${dayLabels[day]} ${startTime}-${endTime} 불가`,
