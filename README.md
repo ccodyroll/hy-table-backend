@@ -133,7 +133,7 @@ Production-ready backend for HY-Table timetable scheduler service. Built with No
    AIRTABLE_TABLE_NAME=your_table_name_here
    
    GEMINI_API_KEY=your_gemini_api_key_here
-   GEMINI_MODEL=gemini-pro
+   GEMINI_MODEL=gemini-2.5-flash
    ```
 
    See `.env.example` for reference.
@@ -157,7 +157,7 @@ Production-ready backend for HY-Table timetable scheduler service. Built with No
    AIRTABLE_BASE_ID=your_base_id
    AIRTABLE_TABLE_NAME=Courses
    GEMINI_API_KEY=your_gemini_api_key
-   GEMINI_MODEL=gemini-pro
+   GEMINI_MODEL=gemini-2.5-flash
    FRONTEND_ORIGIN=http://localhost:3001
    NODE_ENV=development
    ```
@@ -371,7 +371,7 @@ AIRTABLE_TOKEN=your_token
 AIRTABLE_BASE_ID=your_base_id
 AIRTABLE_TABLE_NAME=your_table_name
 GEMINI_API_KEY=your_key
-GEMINI_MODEL=gemini-pro
+GEMINI_MODEL=gemini-2.5-flash
 ```
 
 ### Step 4: Deploy
@@ -402,7 +402,7 @@ Add these environment variables in Render dashboard:
 
 **Optional**:
 - `GEMINI_API_KEY` - Google Gemini API key (if not set, uses fallback scoring)
-- `GEMINI_MODEL` - Gemini model name (default: "gemini-pro")
+- `GEMINI_MODEL` - Gemini model name (default: "gemini-2.5-flash")
 - `FRONTEND_ORIGIN` - Frontend origin for CORS (e.g., `https://your-frontend.com`)
 - `PORT` - Server port (Render sets this automatically)
 - `NODE_ENV` - Set to `production`

@@ -28,7 +28,7 @@ AIRTABLE_BASE_ID=your_base_id_here
 AIRTABLE_TABLE_NAME=Courses
 
 GEMINI_API_KEY=your_key_here
-GEMINI_MODEL=gemini-pro
+GEMINI_MODEL=gemini-2.5-flash
 ```
 
 ## Step 3: Build

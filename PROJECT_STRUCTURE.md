@@ -154,7 +154,7 @@ Required (set in Render):
 Optional:
 - `AIRTABLE_TABLE_NAME` (default: "Courses")
 - `GEMINI_API_KEY` (fallback scoring if not set)
-- `GEMINI_MODEL` (default: "gemini-pro")
+- `GEMINI_MODEL` (default: "gemini-2.5-flash")
 - `FRONTEND_ORIGIN` (CORS origin, default: "*")
 - `PORT` (auto-set by Render)
 - `NODE_ENV` (default: "production" on Render)

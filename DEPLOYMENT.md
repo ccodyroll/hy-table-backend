@@ -32,7 +32,7 @@
 #### Step 2: Configure Service
 
 **Basic Settings:**
-- **Name**: `hy-table-backend` (or your preferred name)
+- **Name**: `HY-table-backend` (or your preferred name)
 - **Region**: Choose closest to your users
 - **Branch**: `main`
 - **Root Directory**: Leave empty (or `./` if required)
@@ -50,7 +50,7 @@ Add the following environment variables in Render dashboard:
 | `AIRTABLE_BASE_ID` | ✅ Yes | Airtable base ID | `app...` |
 | `AIRTABLE_TABLE_NAME` | ⚠️ Optional | Table name (default: "Courses") | `Courses` |
 | `GEMINI_API_KEY` | ⚠️ Optional | Gemini API key (fallback if missing) | `AI...` |
-| `GEMINI_MODEL` | ⚠️ Optional | Model name (default: "gemini-pro") | `gemini-pro` |
+| `GEMINI_MODEL` | ⚠️ Optional | Model name (default: "gemini-2.5-flash") | `gemini-2.5-flash` |
 | `FRONTEND_ORIGIN` | ⚠️ Optional | CORS origin (default: "*") | `https://your-frontend.com` |
 | `NODE_ENV` | ⚠️ Optional | Environment (default: "production") | `production` |
 
