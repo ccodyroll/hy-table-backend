@@ -322,6 +322,11 @@ export function buildRecommendationResponse(
 ): SuccessResponse | ErrorResponse {
   const { candidateTimetables, parsedConstraints, runMeta, targetCredits, requestBody } = input;
 
+  console.log('=== buildRecommendationResponse ===');
+  console.log('Total candidates:', candidateTimetables.length);
+  console.log('Target credits:', targetCredits);
+  console.log('Parsed constraints:', JSON.stringify(parsedConstraints, null, 2));
+
   // HARD 제약 만족 후보 필터링
   const blockedTimes = (requestBody.blockedTimes || []).map((bt: any) => ({
     day: bt.day as DayOfWeek,
@@ -329,9 +334,14 @@ export function buildRecommendationResponse(
     endTime: bt.endTime || bt.end,
   })).filter((bt: any) => bt.day && bt.startTime && bt.endTime) as BlockedTime[];
 
+  console.log('Blocked times:', JSON.stringify(blockedTimes, null, 2));
+
   const validCandidates = candidateTimetables.filter(candidate =>
     satisfiesHardConstraints(candidate, parsedConstraints, blockedTimes)
   );
+
+  console.log('Valid candidates (HARD satisfied):', validCandidates.length);
+  console.log('Invalid candidates:', candidateTimetables.length - validCandidates.length);
 
   // HARD 제약 만족 후보가 없으면 실패 응답
   if (validCandidates.length === 0) {

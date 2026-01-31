@@ -11,7 +11,7 @@ class SchedulerService {
     fixedLectures: FixedLecture[],
     blockedTimes: BlockedTime[],
     targetCredits: number,
-    constraints: UserConstraints,
+    constraints: UserConstraints & { hardConstraints?: UserConstraints },
     strategy: 'MAJOR_FOCUS' | 'MIX' | 'INTEREST_FOCUS',
     tracks: string[],
     interests: string[]
@@ -19,12 +19,18 @@ class SchedulerService {
     // Track statistics
     const initialCourseCount = availableCourses.length;
 
-    // Filter out courses that conflict with fixed lectures or blocked times
+    // Separate HARD and SOFT constraints
+    // HARD constraints should filter courses, SOFT constraints only affect scoring
+    const hardConstraints = constraints.hardConstraints || {};
+    const softConstraints: UserConstraints = { ...constraints };
+    delete (softConstraints as any).hardConstraints;
+
+    // Filter out courses that conflict with fixed lectures, blocked times, or HARD constraints
     const validCourses = this.filterValidCourses(
       availableCourses,
       fixedLectures,
       blockedTimes,
-      constraints
+      hardConstraints
     );
 
     // Count how many courses were filtered out due to blockedTimes
@@ -40,7 +46,7 @@ class SchedulerService {
       fixedLectures,
       blockedTimes,
       targetCredits,
-      constraints,
+      softConstraints, // Use SOFT constraints for backtracking (validation only checks maxClassesPerDay, etc.)
       strategy,
       tracks,
       interests,
@@ -50,9 +56,9 @@ class SchedulerService {
       maxCandidates
     );
 
-    // Score all candidates
+    // Score all candidates using SOFT constraints
     const scoredCandidates = candidates.map(candidate =>
-      this.scoreCandidate(candidate, targetCredits, constraints, strategy, tracks, interests)
+      this.scoreCandidate(candidate, targetCredits, softConstraints, strategy, tracks, interests)
     );
 
     // Sort by score (descending)
@@ -88,7 +94,7 @@ class SchedulerService {
         }
       }
 
-      // Check conflicts with blocked times
+      // Check conflicts with blocked times (HARD constraint)
       for (const blocked of blockedTimes) {
         for (const courseSlot of course.meetingTimes) {
           if (timeSlotsOverlap(courseSlot, blocked)) {
@@ -97,24 +103,10 @@ class SchedulerService {
         }
       }
 
-      // Check constraint violations
-      if (constraints.avoidDays && course.meetingTimes.some(slot => constraints.avoidDays!.includes(slot.day))) {
-        return false;
-      }
-
-      if (constraints.avoidMorning && course.meetingTimes.some(slot => isMorningTime(slot.startTime))) {
-        return false;
-      }
-
-      if (constraints.keepLunchTime && course.meetingTimes.some(slot => overlapsLunchTime(slot))) {
-        return false;
-      }
-
-      if (constraints.avoidTeamProjects && course.tags.some(tag => 
-        tag.includes('팀플') || tag.includes('team') || tag.includes('프로젝트')
-      )) {
-        return false;
-      }
+      // NOTE: SOFT constraints (avoidDays, avoidMorning, keepLunchTime, avoidTeamProjects)
+      // are NOT filtered here. They are only used for scoring later.
+      // This allows the algorithm to generate candidates even if they violate SOFT constraints,
+      // and then rank them lower based on how well they satisfy SOFT constraints.
 
       return true;
     });

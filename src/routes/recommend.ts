@@ -199,6 +199,7 @@ router.post('/', async (req: Request, res: Response) => {
 
     // Convert constraints from frontend format to internal format
     const constraints: any = {};
+    const hardConstraints: any = {}; // HARD 제약만 별도로 관리
     
     // Parse constraint values from frontend constraints object
     for (const [key, value] of Object.entries(requestData.constraints || {})) {
@@ -214,22 +215,22 @@ router.post('/', async (req: Request, res: Response) => {
           try {
             const parsed = JSON.parse(value);
             if (parsed && typeof parsed === 'object') {
-              // Handle hard constraints
+              // Handle hard constraints - these should be treated as HARD (filtered)
               if (Array.isArray(parsed.hard)) {
                 for (const item of parsed.hard) {
                   if (item.text) {
                     const text = item.text;
                     if (['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].includes(text)) {
-                      constraints.avoidDays = [...(constraints.avoidDays || []), text as DayOfWeek];
+                      hardConstraints.avoidDays = [...(hardConstraints.avoidDays || []), text as DayOfWeek];
                     } else if (text === 'avoid_morning') {
-                      constraints.avoidMorning = true;
+                      hardConstraints.avoidMorning = true;
                     } else if (text === 'keep_lunch_time') {
-                      constraints.keepLunchTime = true;
+                      hardConstraints.keepLunchTime = true;
                     }
                   }
                 }
               }
-              // Handle soft constraints
+              // Handle soft constraints - these should be treated as SOFT (scoring only)
               if (Array.isArray(parsed.soft)) {
                 for (const item of parsed.soft) {
                   if (item.text) {
@@ -368,6 +369,13 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     // Generate candidate timetables (with execution time tracking)
+    console.log('=== Generating candidates ===');
+    console.log('Available courses:', allCourses.length);
+    console.log('Fixed lectures:', fixedLectures.length);
+    console.log('Blocked times:', blockedTimes.length);
+    console.log('Target credits:', targetCredits);
+    console.log('Parsed constraints:', JSON.stringify(parsedConstraints, null, 2));
+    
     const startTime = Date.now();
     const result = schedulerService.generateCandidates(
       allCourses,
@@ -380,6 +388,10 @@ router.post('/', async (req: Request, res: Response) => {
       requestData.interests
     );
     const executionTime = Date.now() - startTime;
+    
+    console.log('=== Candidates generated ===');
+    console.log('Total candidates:', result.candidates.length);
+    console.log('Execution time:', executionTime, 'ms');
 
     // Build response using response builder
     const response = buildRecommendationResponse({
