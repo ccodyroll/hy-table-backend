@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import airtableService from '../services/airtableService';
 import geminiService from '../services/geminiService';
 import schedulerService from '../services/schedulerService';
+import { buildRecommendationResponse } from '../utils/responseBuilder';
 import { z } from 'zod';
 import { DayOfWeek, TimeSlot, BlockedTime } from '../types';
 import { parseTimeRange, parseKoreanDay, isValidTimeFormat, isValidTimeRange, timeToMinutes } from '../utils/timeParser';
@@ -246,7 +247,8 @@ router.post('/', async (req: Request, res: Response) => {
     const basketCredits = requestData.basket.reduce((sum, course) => sum + course.credits, 0);
     const targetCredits = requestData.targetCredits || (18 - basketCredits);
 
-    // Generate candidate timetables
+    // Generate candidate timetables (with execution time tracking)
+    const startTime = Date.now();
     const result = schedulerService.generateCandidates(
       allCourses,
       fixedLectures,
@@ -257,67 +259,27 @@ router.post('/', async (req: Request, res: Response) => {
       requestData.tracks,
       requestData.interests
     );
+    const executionTime = Date.now() - startTime;
 
-    // Extract candidates and debug info
-    const candidates = result.candidates;
-    const debugInfo: { candidatesGenerated?: number; combinationsFilteredByBlockedTimes?: number } = result.debug || {};
-
-    // Take top candidates (limit to 3 for frontend)
-    const topCandidates = candidates.slice(0, 3);
-
-    // Convert to frontend format
-    const recommendations = topCandidates.map((candidate) => {
-      // Convert courses to frontend format
-      const courses = candidate.courses.map(course => {
-        // Get first meeting time for display
-        const firstMeeting = course.meetingTimes[0];
-        const startHour = parseInt(firstMeeting.startTime.split(':')[0], 10);
-        const endHour = parseInt(firstMeeting.endTime.split(':')[0], 10);
-        const duration = endHour - startHour;
-
-        const dayLabels: Record<DayOfWeek, string> = {
-          'MON': '월',
-          'TUE': '화',
-          'WED': '수',
-          'THU': '목',
-          'FRI': '금',
-          'SAT': '토',
-          'SUN': '일',
-        };
-
-        return {
-          title: course.name,
-          professor: course.instructor || '',
-          code: course.courseId,
-          credits: course.credits,
-          day: dayLabels[firstMeeting.day] || firstMeeting.day,
-          startHour,
-          duration,
-        };
-      });
-
-      return {
-        courses,
-      };
+    // Build response using response builder
+    const response = buildRecommendationResponse({
+      requestBody: requestData,
+      parsedConstraints,
+      candidateTimetables: result.candidates,
+      runMeta: {
+        candidatesGenerated: result.debug?.candidatesGenerated || result.candidates.length,
+        geminiUsed,
+        executionTime,
+      },
+      targetCredits,
     });
 
-    // Build response with debug info
-    const response: any = {
-      recommendations,
-    };
-
-    // Add debug information
-    if (debugInfo.candidatesGenerated !== undefined || geminiUsed || blockedTimes.length > 0) {
-      response.debug = {
-        candidatesGenerated: debugInfo.candidatesGenerated || candidates.length,
-        geminiUsed: geminiUsed,
-        blockedTimesApplied: blockedTimes.length > 0,
-        blockedTimesCount: blockedTimes.length,
-        combinationsFilteredByBlockedTimes: debugInfo.combinationsFilteredByBlockedTimes || 0,
-      };
+    // 성공/실패에 따라 상태 코드 설정
+    if ('error' in response) {
+      res.status(400).json(response);
+    } else {
+      res.json(response);
     }
-
-    res.json(response);
   } catch (error: any) {
     console.error('Error generating recommendations:', error);
 
