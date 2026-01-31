@@ -29,8 +29,17 @@ router.post('/', async (req: Request, res: Response) => {
 
     const { freeText } = validationResult.data;
 
+    if (!freeText || freeText.trim().length === 0) {
+      res.status(400).json({
+        error: {
+          message: 'Free text cannot be empty',
+        },
+      });
+      return;
+    }
+
     // Parse constraints using Gemini
-    const parsedConstraints = await geminiService.parseConstraints(freeText);
+    const parsedConstraints = await geminiService.parseConstraints(freeText.trim());
 
     if (!parsedConstraints) {
       // If Gemini fails or is not available, return empty constraints
@@ -61,6 +70,7 @@ router.post('/', async (req: Request, res: Response) => {
     res.status(500).json({
       error: {
         message: 'Failed to parse conditions',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined,
       },
     });
   }
