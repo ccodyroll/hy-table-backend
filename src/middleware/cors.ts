@@ -1,6 +1,14 @@
-import cors from 'cors';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const cors = require('cors') as typeof import('cors');
 
-const corsOptions = {
+interface CorsOptions {
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => void;
+  credentials: boolean;
+  methods: string[];
+  allowedHeaders: string[];
+}
+
+const corsOptions: CorsOptions = {
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
     const allowedOrigins = process.env.CORS_ORIGIN
       ? process.env.CORS_ORIGIN.split(',').map((o: string) => o.trim())

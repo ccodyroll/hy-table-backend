@@ -57,8 +57,8 @@ class AirtableService {
         .select({
           view: 'Grid view', // Adjust if needed
         })
-        .eachPage((pageRecords, fetchNextPage) => {
-          records.push(...pageRecords as any);
+        .eachPage((pageRecords: AirtableRecord[], fetchNextPage: () => void) => {
+          records.push(...pageRecords);
           fetchNextPage();
         });
 
