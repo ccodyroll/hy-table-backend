@@ -11,39 +11,36 @@ const router = Router();
 
 // Frontend request schema
 const recommendRequestSchema = z.object({
-  basket: z.array(z.object({
-    title: z.string(),
-    professor: z.string().optional(),
-    code: z.string(),
-    credits: z.number(),
-    day: z.string(),
-    startHour: z.number(),
-    duration: z.number(),
-  })).optional().default([]),
-  blockedTimes: z.array(z.object({
-    day: z.string(),
-    start: z.string().optional(), // HH:MM format
-    end: z.string().optional(), // HH:MM format
-    startTime: z.string().optional(), // Alternative: HH:MM format
-    endTime: z.string().optional(), // Alternative: HH:MM format
-    startHour: z.number().optional(), // Alternative: hour number
-    duration: z.number().optional(), // Alternative: duration in hours
-    label: z.string().optional(), // Optional label (ignored by server)
-  })).optional().default([]),
-  strategy: z.enum(['MAJOR_FOCUS', 'MIX', 'INTEREST_FOCUS']).default('MIX'),
-  tracks: z.array(z.string()).optional().default([]),
-  interests: z.array(z.string()).optional().default([]),
-  constraints: z.record(z.union([z.string(), z.boolean()])).optional().default({}),
-  freeTextRequest: z.string().optional(),
-  // Optional: for backward compatibility
   user: z.object({
     name: z.string(),
     major: z.string(),
     studentIdYear: z.number(),
     grade: z.number(),
     semester: z.number(),
-  }).optional(),
-  targetCredits: z.number().optional(),
+  }),
+  targetCredits: z.number(),
+  fixedLectures: z.array(z.object({
+    name: z.string(),
+    code: z.string(),
+    credits: z.number(),
+    day: z.number().min(0).max(5), // 0=월, 1=화, ..., 5=토
+    startHour: z.number().min(0).max(13), // 0=09:00, 1=10:00, ..., 13=22:00
+    duration: z.number(), // 30분 단위: 2=1시간, 3=1.5시간, 4=2시간
+    professor: z.string().optional(),
+  })).optional().default([]),
+  blockedTimes: z.array(z.object({
+    day: z.number().min(0).max(5), // 0=월, 1=화, ..., 5=토
+    start: z.number().min(0).max(13), // 0=09:00, 1=10:00, ..., 13=22:00
+    end: z.number().min(0).max(13), // 0=09:00, 1=10:00, ..., 13=22:00
+    label: z.string().optional(),
+  })).optional().default([]),
+  constraints: z.record(z.union([z.string(), z.boolean()])).optional().default({}),
+  freeTextRequest: z.string().optional(),
+  // Backward compatibility
+  basket: z.array(z.any()).optional().default([]),
+  strategy: z.enum(['MAJOR_FOCUS', 'MIX', 'INTEREST_FOCUS']).optional().default('MIX'),
+  tracks: z.array(z.string()).optional().default([]),
+  interests: z.array(z.string()).optional().default([]),
 });
 
 /**
@@ -70,149 +67,193 @@ router.post('/', async (req: Request, res: Response) => {
 
     const requestData = validationResult.data;
 
-    // Convert frontend basket to fixedLectures format
-    const fixedLectures = requestData.basket.map(course => {
-      const day = parseKoreanDay(course.day) || 'MON';
-      const startTime = `${course.startHour.toString().padStart(2, '0')}:00`;
-      const endHour = course.startHour + course.duration;
-      const endTime = `${endHour.toString().padStart(2, '0')}:00`;
+    // Helper: Convert day number (0~5) to DayOfWeek
+    const dayNumberToDayOfWeek = (dayNum: number): DayOfWeek => {
+      const days: DayOfWeek[] = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+      return days[dayNum] || 'MON';
+    };
+
+    // Helper: Convert startHour (0~13) to HH:mm format (0=09:00, 1=10:00, ..., 13=22:00)
+    const startHourToTime = (startHour: number): string => {
+      const hour = 9 + startHour; // 0=09:00, 1=10:00, ..., 13=22:00
+      return `${hour.toString().padStart(2, '0')}:00`;
+    };
+
+    // Helper: Convert duration (30분 단위) to hours
+    const durationToHours = (duration: number): number => {
+      return duration / 2; // 2=1시간, 3=1.5시간, 4=2시간
+    };
+
+    // Convert fixedLectures format
+    const fixedLectures = (requestData.fixedLectures || []).map(course => {
+      const day = dayNumberToDayOfWeek(course.day);
+      const startTime = startHourToTime(course.startHour);
+      const durationHours = durationToHours(course.duration);
+      const endHour = 9 + course.startHour + durationHours;
+      const endTime = `${Math.floor(endHour).toString().padStart(2, '0')}:${((endHour % 1) * 60).toString().padStart(2, '0')}`;
 
       return {
         courseId: course.code,
         meetingTimes: [{
-          day: day as DayOfWeek,
+          day,
           startTime,
           endTime,
         }],
       };
     });
 
-    // Validate and convert blockedTimes format
-    const blockedTimes: BlockedTime[] = [];
-    const blockedTimesValidationErrors: Array<{ index: number; message: string }> = [];
+    // Backward compatibility: also check basket
+    if (requestData.basket && requestData.basket.length > 0) {
+      requestData.basket.forEach((course: any) => {
+        let day: DayOfWeek;
+        let startTime: string;
+        let endTime: string;
 
-    for (let i = 0; i < requestData.blockedTimes.length; i++) {
-      const blocked = requestData.blockedTimes[i];
+        if (typeof course.day === 'number') {
+          day = dayNumberToDayOfWeek(course.day);
+          startTime = startHourToTime(course.startHour);
+          const durationHours = durationToHours(course.duration);
+          const endHour = 9 + course.startHour + durationHours;
+          endTime = `${Math.floor(endHour).toString().padStart(2, '0')}:${((endHour % 1) * 60).toString().padStart(2, '0')}`;
+        } else {
+          day = parseKoreanDay(course.day) || 'MON';
+          startTime = `${course.startHour.toString().padStart(2, '0')}:00`;
+          const endHour = course.startHour + course.duration;
+          endTime = `${endHour.toString().padStart(2, '0')}:00`;
+        }
+
+        fixedLectures.push({
+          courseId: course.code,
+          meetingTimes: [{
+            day,
+            startTime,
+            endTime,
+          }],
+        });
+      });
+    }
+
+    // Convert blockedTimes format
+    const blockedTimes: BlockedTime[] = (requestData.blockedTimes || []).map((blocked: any) => {
+      // New format: day, start, end are numbers (0~13)
+      if (typeof blocked.day === 'number' && typeof blocked.start === 'number' && typeof blocked.end === 'number') {
+        const day = dayNumberToDayOfWeek(blocked.day);
+        const startTime = startHourToTime(blocked.start);
+        const endTime = startHourToTime(blocked.end);
+
+        return {
+          day,
+          startTime,
+          endTime,
+          label: blocked.label,
+        };
+      }
+
+      // Backward compatibility: old format with strings
+      let day: DayOfWeek;
       let startTime: string;
       let endTime: string;
-      
-      // Try to get start/end from various formats
-      if (blocked.start && blocked.end) {
-        startTime = blocked.start;
-        endTime = blocked.end;
-      } else if (blocked.startTime && blocked.endTime) {
+
+      if (typeof blocked.day === 'string') {
+        day = parseKoreanDay(blocked.day) || 'MON';
+      } else {
+        day = dayNumberToDayOfWeek(blocked.day);
+      }
+
+      if (blocked.startTime && blocked.endTime) {
         startTime = blocked.startTime;
         endTime = blocked.endTime;
+      } else if (blocked.start !== undefined && blocked.end !== undefined) {
+        if (typeof blocked.start === 'number' && typeof blocked.end === 'number') {
+          startTime = startHourToTime(blocked.start);
+          endTime = startHourToTime(blocked.end);
+        } else {
+          startTime = String(blocked.start);
+          endTime = String(blocked.end);
+        }
       } else if (blocked.startHour !== undefined && blocked.duration !== undefined) {
-        startTime = `${blocked.startHour.toString().padStart(2, '0')}:00`;
-        const endHour = blocked.startHour + blocked.duration;
-        endTime = `${endHour.toString().padStart(2, '0')}:00`;
+        startTime = startHourToTime(blocked.startHour);
+        const durationHours = durationToHours(blocked.duration);
+        const endHour = 9 + blocked.startHour + durationHours;
+        endTime = `${Math.floor(endHour).toString().padStart(2, '0')}:${((endHour % 1) * 60).toString().padStart(2, '0')}`;
       } else {
-        blockedTimesValidationErrors.push({
-          index: i,
-          message: 'Missing required fields: must provide (start, end) or (startTime, endTime) or (startHour, duration)',
-        });
-        continue;
+        throw new Error(`Invalid blockedTimes format: missing start/end`);
       }
 
-      // Validate time format (HH:MM)
-      if (!isValidTimeFormat(startTime)) {
-        blockedTimesValidationErrors.push({
-          index: i,
-          message: `Invalid start time format: "${startTime}". Expected HH:MM format (e.g., "18:00")`,
-        });
-        continue;
-      }
-
-      if (!isValidTimeFormat(endTime)) {
-        blockedTimesValidationErrors.push({
-          index: i,
-          message: `Invalid end time format: "${endTime}". Expected HH:MM format (e.g., "21:00")`,
-        });
-        continue;
-      }
-
-      // Validate start < end
-      if (!isValidTimeRange(startTime, endTime)) {
-        blockedTimesValidationErrors.push({
-          index: i,
-          message: `Invalid time range: start time "${startTime}" must be before end time "${endTime}"`,
-        });
-        continue;
-      }
-
-      // Parse day
-      const day = parseKoreanDay(blocked.day);
-      if (!day) {
-        blockedTimesValidationErrors.push({
-          index: i,
-          message: `Invalid day: "${blocked.day}". Expected one of: 월, 화, 수, 목, 금, 토, 일, MON, TUE, WED, THU, FRI, SAT, SUN`,
-        });
-        continue;
-      }
-
-      blockedTimes.push({
-        day: day as DayOfWeek,
+      return {
+        day,
         startTime,
         endTime,
-        label: blocked.label, // Optional, preserved but not used
-      });
-    }
-
-    // If there are validation errors, return 400
-    if (blockedTimesValidationErrors.length > 0) {
-      res.status(400).json({
-        error: 'VALIDATION_ERROR',
-        message: 'Invalid blockedTimes data',
-        details: blockedTimesValidationErrors,
-      });
-      return;
-    }
+        label: blocked.label,
+      };
+    });
 
     // Convert constraints from frontend format to internal format
     const constraints: any = {};
     
-    // Parse constraint values
+    // Parse constraint values from frontend constraints object
     for (const [key, value] of Object.entries(requestData.constraints || {})) {
+      // Skip false values
+      if (value === false) {
+        continue;
+      }
+
       if (typeof value === 'string') {
-        // Handle string values like "MON_WED_FRI", "avoid_morning", etc.
-        if (value.includes('_') && ['MON', 'TUE', 'WED', 'THU', 'FRI'].some(d => value.includes(d))) {
-          // Day-based constraint
-          const days = value.split('_').filter(d => ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].includes(d)) as DayOfWeek[];
-          if (days.length > 0) {
-            if (key.includes('avoid') || value.startsWith('MON') || value.startsWith('TUE') || value.startsWith('WED') || value.startsWith('THU') || value.startsWith('FRI')) {
+        // Handle constraint types
+        if (key === '시간 제약' || key === '공강 설정') {
+          // Parse day-based constraints like "MON_WED_FRI" or "수요일 공강"
+          if (value.includes('_') && ['MON', 'TUE', 'WED', 'THU', 'FRI'].some(d => value.includes(d))) {
+            const days = value.split('_').filter(d => ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].includes(d)) as DayOfWeek[];
+            if (days.length > 0) {
               constraints.avoidDays = [...(constraints.avoidDays || []), ...days];
             }
+          } else if (value === 'avoid_morning') {
+            constraints.avoidMorning = true;
+          } else if (value === 'keep_lunch_time') {
+            constraints.keepLunchTime = true;
+          } else if (value.startsWith('max_') && value.includes('_per_day')) {
+            const match = value.match(/max_(\d+)_per_day/);
+            if (match) {
+              constraints.maxClassesPerDay = parseInt(match[1], 10);
+            }
+          } else if (value.startsWith('max_') && value.includes('_consecutive')) {
+            const match = value.match(/max_(\d+)_consecutive/);
+            if (match) {
+              constraints.maxConsecutiveClasses = parseInt(match[1], 10);
+            }
+          } else if (value.startsWith('blocked_')) {
+            // Blocked time constraints are already handled in blockedTimes
+            // Skip here
+          } else if (value.includes('공강') || value.includes('수업 없음')) {
+            // Parse Korean day names from string like "수요일 공강"
+            const dayMatch = value.match(/(월|화|수|목|금|토|일)요일/);
+            if (dayMatch) {
+              const day = parseKoreanDay(dayMatch[1] + '요일');
+              if (day) {
+                constraints.avoidDays = [...(constraints.avoidDays || []), day];
+              }
+            }
           }
-        } else if (value === 'avoid_morning') {
-          constraints.avoidMorning = true;
-        } else if (value === 'keep_lunch_time') {
-          constraints.keepLunchTime = true;
-        } else if (value === 'avoid_team_projects') {
-          constraints.avoidTeamProjects = true;
-        } else if (value === 'prefer_online') {
-          constraints.preferOnlineClasses = true;
-        } else if (value.startsWith('max_') && value.includes('_per_day')) {
-          const match = value.match(/max_(\d+)_per_day/);
-          if (match) {
-            constraints.maxClassesPerDay = parseInt(match[1], 10);
+        } else if (key === '수업 성향') {
+          if (value === 'avoid_team_projects') {
+            constraints.avoidTeamProjects = true;
+          } else if (value === 'prefer_online') {
+            constraints.preferOnlineClasses = true;
           }
-        } else if (value.startsWith('max_') && value.includes('_consecutive')) {
-          const match = value.match(/max_(\d+)_consecutive/);
-          if (match) {
-            constraints.maxConsecutiveClasses = parseInt(match[1], 10);
+        } else if (key === '목표학점 설정') {
+          // Parse credit range like "15~18" or "15-18"
+          const rangeMatch = String(value).match(/(\d+)\s*[~-]\s*(\d+)/);
+          if (rangeMatch) {
+            constraints.targetCreditsMin = parseInt(rangeMatch[1], 10);
+            constraints.targetCreditsMax = parseInt(rangeMatch[2], 10);
+          } else {
+            const singleMatch = String(value).match(/(\d+)/);
+            if (singleMatch) {
+              const credits = parseInt(singleMatch[1], 10);
+              constraints.targetCreditsMin = credits;
+              constraints.targetCreditsMax = credits;
+            }
           }
-        }
-      } else if (typeof value === 'boolean') {
-        // Handle boolean constraints
-        if (key.includes('avoidMorning') || key.includes('morning')) {
-          constraints.avoidMorning = value;
-        } else if (key.includes('lunch') || key.includes('Lunch')) {
-          constraints.keepLunchTime = value;
-        } else if (key.includes('team') || key.includes('Team')) {
-          constraints.avoidTeamProjects = value;
-        } else if (key.includes('online') || key.includes('Online')) {
-          constraints.preferOnlineClasses = value;
         }
       }
     }
@@ -237,15 +278,33 @@ router.post('/', async (req: Request, res: Response) => {
       }
     }
 
-    // Get user major from request or use default
-    const userMajor = requestData.user?.major || '컴퓨터공학';
+    // Get user major from request
+    const userMajor = requestData.user.major;
     
     // Fetch available courses
     const allCourses = await airtableService.getCourses(userMajor);
 
-    // Calculate target credits from basket or use default
-    const basketCredits = requestData.basket.reduce((sum, course) => sum + course.credits, 0);
-    const targetCredits = requestData.targetCredits || (18 - basketCredits);
+    // Parse targetCredits: if it's a range like "15~18", use minimum
+    let targetCredits: number = requestData.targetCredits;
+    if (typeof targetCredits === 'string') {
+      const rangeMatch = String(targetCredits).match(/(\d+)\s*[~-]\s*(\d+)/);
+      if (rangeMatch) {
+        targetCredits = parseInt(rangeMatch[1], 10); // Use minimum
+      } else {
+        targetCredits = parseInt(String(targetCredits), 10) || 18;
+      }
+    }
+
+    // Calculate fixed lectures credits
+    const fixedCredits = fixedLectures.reduce((sum, fl) => {
+      const course = allCourses.find(c => c.courseId === fl.courseId);
+      return sum + (course?.credits || 0);
+    }, 0);
+
+    // If targetCredits is not provided, use default (18 - fixed credits)
+    if (!targetCredits || targetCredits <= 0) {
+      targetCredits = 18 - fixedCredits;
+    }
 
     // Generate candidate timetables (with execution time tracking)
     const startTime = Date.now();
