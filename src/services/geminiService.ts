@@ -58,6 +58,30 @@ Rules:
    - "온라인/비대면" → preferOnlineClasses: true
    - "월요일 수업 없음" → avoidDays: ["MON"]
 
+5. Notes field normalization (CRITICAL):
+   If the user mentions specific time constraints that cannot be mapped to structured fields, put them in "notes" field.
+   The "notes" field MUST be normalized to one of these EXACT formats:
+   
+   For time blocks (blocked times):
+   - Format: "[요일] [시작시간]-[종료시간] 불가"
+   - 요일: 월요일, 화요일, 수요일, 목요일, 금요일, 토요일, 일요일 (full name only)
+   - 시간: HH:MM 형식 (24-hour format)
+   - Examples:
+     * "오후 2-7시 안대" → "월요일 14:00-19:00 불가" (if no day specified, assume all weekdays or use context)
+     * "월요일 오후 5-7시 안돼" → "월요일 17:00-19:00 불가"
+     * "화요일 3시부터 5시까지 안됨" → "화요일 15:00-17:00 불가"
+     * "수요일 오전 9-10시" → "수요일 09:00-10:00 불가"
+     * "금요일 저녁 6-8시 불가" → "금요일 18:00-20:00 불가"
+   
+   IMPORTANT normalization rules:
+   - "오후 N시" → N+12 (if N < 12), "오전 N시" → N (if N < 12)
+   - "저녁" → 18:00-22:00, "밤" → 20:00-22:00, "새벽" → 00:00-06:00
+   - "점심" → 12:00-13:00, "아침" → 09:00-12:00
+   - If day is not specified but time is mentioned, try to infer from context or use "월요일" as default
+   - Always use 24-hour format (HH:MM)
+   - Always end with "불가" or "안됨" or "안돼" → normalize to "불가"
+   - Remove all reason text (알바, 수업, 일 등) - only keep day and time
+
 Output JSON schema:
 {
   "avoidDays": ["MON","TUE","WED","THU","FRI"] | [],
