@@ -18,7 +18,7 @@ const recommendRequestSchema = z.object({
     grade: z.number(),
     semester: z.number(),
   }),
-  targetCredits: z.number(),
+  targetCredits: z.union([z.number(), z.string()]), // 문자열도 허용 (예: "15~18")
   fixedLectures: z.array(z.object({
     name: z.string(),
     code: z.string(),
@@ -51,11 +51,18 @@ const recommendRequestSchema = z.object({
  * Response: { "recommendations": [{ "courses": [...] }] }
  */
 router.post('/', async (req: Request, res: Response) => {
+  console.log('=== /api/recommend called ===');
+  console.log('Request body:', JSON.stringify(req.body, null, 2));
+  
   try {
     // Validate request
     const validationResult = recommendRequestSchema.safeParse(req.body);
     
     if (!validationResult.success) {
+      console.error('=== VALIDATION FAILED ===');
+      console.error('Validation errors:', JSON.stringify(validationResult.error.errors, null, 2));
+      console.error('Request body received:', JSON.stringify(req.body, null, 2));
+      
       res.status(400).json({
         error: {
           message: 'Invalid request data',
@@ -65,7 +72,9 @@ router.post('/', async (req: Request, res: Response) => {
       return;
     }
 
+    console.log('Validation passed');
     const requestData = validationResult.data;
+    console.log('Parsed request data (first 500 chars):', JSON.stringify(requestData, null, 2).substring(0, 500));
 
     // Helper: Convert day number (0~5) to DayOfWeek
     const dayNumberToDayOfWeek = (dayNum: number): DayOfWeek => {
@@ -285,14 +294,16 @@ router.post('/', async (req: Request, res: Response) => {
     const allCourses = await airtableService.getCourses(userMajor);
 
     // Parse targetCredits: if it's a range like "15~18", use minimum
-    let targetCredits: number = requestData.targetCredits;
-    if (typeof targetCredits === 'string') {
-      const rangeMatch = String(targetCredits).match(/(\d+)\s*[~-]\s*(\d+)/);
+    let targetCredits: number;
+    if (typeof requestData.targetCredits === 'string') {
+      const rangeMatch = requestData.targetCredits.match(/(\d+)\s*[~-]\s*(\d+)/);
       if (rangeMatch) {
         targetCredits = parseInt(rangeMatch[1], 10); // Use minimum
       } else {
-        targetCredits = parseInt(String(targetCredits), 10) || 18;
+        targetCredits = parseInt(requestData.targetCredits, 10) || 18;
       }
+    } else {
+      targetCredits = requestData.targetCredits;
     }
 
     // Calculate fixed lectures credits
