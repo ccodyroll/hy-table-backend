@@ -26,7 +26,7 @@ class SchedulerService {
     delete (softConstraints as any).hardConstraints;
 
     // Filter out courses that conflict with fixed lectures, blocked times, or HARD constraints
-    const validCourses = this.filterValidCourses(
+    let validCourses = this.filterValidCourses(
       availableCourses,
       fixedLectures,
       blockedTimes,
@@ -36,6 +36,10 @@ class SchedulerService {
     // Count how many courses were filtered out due to blockedTimes
     // (This is approximate - some courses might be filtered for multiple reasons)
     const filteredByBlockedTimesCount = initialCourseCount - validCourses.length;
+
+    // Sort courses based on strategy and constraints to prioritize relevant courses
+    // This ensures different conditions produce different timetables
+    validCourses = this.sortCoursesByPriority(validCourses, strategy, tracks, interests, softConstraints);
 
     // Generate candidates using backtracking
     const candidates: TimetableCandidate[] = [];
@@ -204,6 +208,113 @@ class SchedulerService {
       }
     }
     return false;
+  }
+
+  /**
+   * Sort courses by priority based on strategy, tracks, interests, and constraints
+   * This ensures that different conditions produce different timetables
+   */
+  private sortCoursesByPriority(
+    courses: Course[],
+    strategy: 'MAJOR_FOCUS' | 'MIX' | 'INTEREST_FOCUS',
+    tracks: string[],
+    interests: string[],
+    constraints: UserConstraints
+  ): Course[] {
+    // Create a copy to avoid mutating the original array
+    const sorted = [...courses];
+
+    sorted.sort((a, b) => {
+      let scoreA = 0;
+      let scoreB = 0;
+
+      // Strategy-based scoring
+      if (strategy === 'MAJOR_FOCUS' && tracks.length > 0) {
+        const aMatches = tracks.some(track => 
+          (a.major || '').toLowerCase().includes(track.toLowerCase()) || 
+          a.tags.some(tag => tag.toLowerCase().includes(track.toLowerCase()))
+        );
+        const bMatches = tracks.some(track => 
+          (b.major || '').toLowerCase().includes(track.toLowerCase()) || 
+          b.tags.some(tag => tag.toLowerCase().includes(track.toLowerCase()))
+        );
+        if (aMatches) scoreA += 100;
+        if (bMatches) scoreB += 100;
+      } else if (strategy === 'INTEREST_FOCUS' && interests.length > 0) {
+        const aMatches = interests.some(interest => 
+          a.name.toLowerCase().includes(interest.toLowerCase()) || 
+          a.tags.some(tag => tag.toLowerCase().includes(interest.toLowerCase()))
+        );
+        const bMatches = interests.some(interest => 
+          b.name.toLowerCase().includes(interest.toLowerCase()) || 
+          b.tags.some(tag => tag.toLowerCase().includes(interest.toLowerCase()))
+        );
+        if (aMatches) scoreA += 100;
+        if (bMatches) scoreB += 100;
+      }
+
+      // Constraint-based scoring
+      if (constraints.preferOnlineClasses) {
+        if (a.deliveryType === 'ONLINE') scoreA += 20;
+        if (b.deliveryType === 'ONLINE') scoreB += 20;
+      }
+
+      if (constraints.avoidTeamProjects) {
+        // Assuming teamProject is a boolean field or tag
+        const aHasTeamProject = a.tags.some(tag => 
+          tag.toLowerCase().includes('team') || 
+          tag.toLowerCase().includes('팀플') ||
+          tag.toLowerCase().includes('group')
+        );
+        const bHasTeamProject = b.tags.some(tag => 
+          tag.toLowerCase().includes('team') || 
+          tag.toLowerCase().includes('팀플') ||
+          tag.toLowerCase().includes('group')
+        );
+        if (!aHasTeamProject) scoreA += 15;
+        if (!bHasTeamProject) scoreB += 15;
+      }
+
+      if (constraints.avoidMorning) {
+        const aIsMorning = a.meetingTimes.some(slot => isMorningTime(slot.startTime));
+        const bIsMorning = b.meetingTimes.some(slot => isMorningTime(slot.startTime));
+        if (!aIsMorning) scoreA += 10;
+        if (!bIsMorning) scoreB += 10;
+      }
+
+      // Prefer courses that don't violate avoidDays
+      if (constraints.avoidDays && constraints.avoidDays.length > 0) {
+        const aHasAvoidedDay = a.meetingTimes.some(slot => 
+          constraints.avoidDays!.includes(slot.day)
+        );
+        const bHasAvoidedDay = b.meetingTimes.some(slot => 
+          constraints.avoidDays!.includes(slot.day)
+        );
+        if (!aHasAvoidedDay) scoreA += 10;
+        if (!bHasAvoidedDay) scoreB += 10;
+      }
+
+      // Prefer courses that keep lunch time free
+      if (constraints.keepLunchTime) {
+        const aOverlapsLunch = a.meetingTimes.some(slot => overlapsLunchTime(slot));
+        const bOverlapsLunch = b.meetingTimes.some(slot => overlapsLunchTime(slot));
+        if (!aOverlapsLunch) scoreA += 10;
+        if (!bOverlapsLunch) scoreB += 10;
+      }
+
+      // Secondary sort: prefer courses with more credits (to reach target faster)
+      scoreA += a.credits;
+      scoreB += b.credits;
+
+      // Tertiary sort: by course ID for consistency
+      if (scoreA === scoreB) {
+        return a.courseId.localeCompare(b.courseId);
+      }
+
+      return scoreB - scoreA; // Higher score first
+    });
+
+    return sorted;
   }
 
   /**
