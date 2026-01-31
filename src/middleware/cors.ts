@@ -3,7 +3,7 @@ import cors from 'cors';
 const corsOptions = {
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
     const allowedOrigins = process.env.CORS_ORIGIN
-      ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
+      ? process.env.CORS_ORIGIN.split(',').map((o: string) => o.trim())
       : ['http://localhost:3000', 'http://localhost:5173', 'http://localhost:8080'];
 
     // Allow requests with no origin (mobile apps, Postman, etc.)

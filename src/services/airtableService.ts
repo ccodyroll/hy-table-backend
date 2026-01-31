@@ -108,7 +108,7 @@ class AirtableService {
     if (Array.isArray(fields.tags || fields['Tags'] || fields['태그'])) {
       tags = fields.tags || fields['Tags'] || fields['태그'] || [];
     } else if (typeof (fields.tags || fields['Tags'] || fields['태그']) === 'string') {
-      tags = (fields.tags || fields['Tags'] || fields['태그'] || '').split(',').map(t => t.trim());
+      tags = (fields.tags || fields['Tags'] || fields['태그'] || '').split(',').map((t: string) => t.trim());
     }
 
     // Parse delivery type
@@ -122,7 +122,7 @@ class AirtableService {
     if (Array.isArray(fields.restrictions || fields['Restrictions'] || fields['제한사항'])) {
       restrictions = fields.restrictions || fields['Restrictions'] || fields['제한사항'] || [];
     } else if (typeof (fields.restrictions || fields['Restrictions'] || fields['제한사항']) === 'string') {
-      restrictions = (fields.restrictions || fields['Restrictions'] || fields['제한사항'] || '').split(',').map(r => r.trim());
+      restrictions = (fields.restrictions || fields['Restrictions'] || fields['제한사항'] || '').split(',').map((r: string) => r.trim());
     }
 
     return {

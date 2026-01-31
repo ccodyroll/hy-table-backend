@@ -34,11 +34,11 @@ router.post('/', async (req: Request, res: Response) => {
           avoidDays: [
             ...(requestData.constraints.avoidDays || []),
             ...(geminiConstraints.avoidDays || []),
-          ].filter((v, i, a) => a.indexOf(v) === i),
+          ].filter((v: string, i: number, a: string[]) => a.indexOf(v) === i),
           preferOnlineOnlyDays: [
             ...(requestData.constraints.preferOnlineOnlyDays || []),
             ...(geminiConstraints.preferOnlineOnlyDays || []),
-          ].filter((v, i, a) => a.indexOf(v) === i),
+          ].filter((v: string, i: number, a: string[]) => a.indexOf(v) === i),
         };
       }
     }
