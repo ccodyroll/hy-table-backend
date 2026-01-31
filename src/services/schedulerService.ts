@@ -10,7 +10,9 @@ class SchedulerService {
     availableCourses: Course[],
     fixedLectures: FixedLecture[],
     blockedTimes: BlockedTime[],
-    targetCredits: number,
+    targetCredits: number, // Total target credits (for scoring)
+    remainingTargetCredits: number, // Remaining credits needed (for backtracking)
+    fixedCredits: number, // Fixed lectures credits (pre-calculated)
     constraints: UserConstraints & { hardConstraints?: UserConstraints },
     strategy: 'MAJOR_FOCUS' | 'MIX' | 'INTEREST_FOCUS',
     tracks: string[],
@@ -49,7 +51,8 @@ class SchedulerService {
       validCourses,
       fixedLectures,
       blockedTimes,
-      targetCredits,
+      remainingTargetCredits, // Use remaining credits for backtracking
+      fixedCredits, // Pass fixed credits to calculate total
       softConstraints, // Use SOFT constraints for backtracking (validation only checks maxClassesPerDay, etc.)
       strategy,
       tracks,
@@ -129,13 +132,14 @@ class SchedulerService {
     courses: Course[],
     fixedLectures: FixedLecture[],
     blockedTimes: BlockedTime[],
-    targetCredits: number,
+    remainingTargetCredits: number, // Remaining credits needed (excluding fixed)
+    fixedCredits: number, // Fixed lectures credits
     constraints: UserConstraints,
     strategy: 'MAJOR_FOCUS' | 'MIX' | 'INTEREST_FOCUS',
     tracks: string[],
     interests: string[],
     currentSelection: Course[],
-    currentCredits: number,
+    currentCredits: number, // Credits from selected courses only
     candidates: TimetableCandidate[],
     maxCandidates: number
   ): void {
@@ -144,13 +148,17 @@ class SchedulerService {
       return;
     }
 
-    if (currentCredits >= targetCredits) {
+    // Total credits = fixed credits + current credits from selection
+    const totalCredits = fixedCredits + currentCredits;
+
+    // Check if we've reached the remaining target (fixed + remaining = total target)
+    if (currentCredits >= remainingTargetCredits) {
       // Check if selection is valid
       if (this.isValidSelection(currentSelection, constraints)) {
         const allSlots = this.buildTimetableGrid(currentSelection, fixedLectures);
         candidates.push({
           courses: [...currentSelection],
-          totalCredits: currentCredits,
+          totalCredits: totalCredits, // Include fixed credits in total
           score: 0, // Will be scored later
           timetableGrid: allSlots,
           conflicts: [],
@@ -165,7 +173,8 @@ class SchedulerService {
       const course = courses[i];
 
       // Skip if adding this course would exceed reasonable limits
-      if (currentCredits + course.credits > targetCredits + 3) {
+      // remainingTargetCredits is the target for additional courses, so check against that
+      if (currentCredits + course.credits > remainingTargetCredits + 3) {
         continue;
       }
 
@@ -180,7 +189,8 @@ class SchedulerService {
         courses.slice(i + 1),
         fixedLectures,
         blockedTimes,
-        targetCredits,
+        remainingTargetCredits,
+        fixedCredits,
         constraints,
         strategy,
         tracks,

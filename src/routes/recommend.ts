@@ -382,15 +382,20 @@ router.post('/', async (req: Request, res: Response) => {
 
     // If targetCredits is not provided, use default (18 - fixed credits)
     if (!targetCredits || targetCredits <= 0) {
-      targetCredits = 18 - fixedCredits;
+      targetCredits = 18;
     }
+
+    // targetCredits is the TOTAL target (including fixed lectures)
+    // We need to calculate remaining credits needed
+    const remainingTargetCredits = Math.max(0, targetCredits - fixedCredits);
 
     // Generate candidate timetables (with execution time tracking)
     console.log('=== Generating candidates ===');
     console.log('Available courses:', allCourses.length);
-    console.log('Fixed lectures:', fixedLectures.length);
+    console.log('Fixed lectures:', fixedLectures.length, `(${fixedCredits} credits)`);
     console.log('Blocked times:', blockedTimes.length);
-    console.log('Target credits:', targetCredits);
+    console.log('Target credits (total):', targetCredits);
+    console.log('Target credits (remaining):', remainingTargetCredits);
     console.log('Parsed constraints:', JSON.stringify(parsedConstraints, null, 2));
     
     const startTime = Date.now();
@@ -398,7 +403,9 @@ router.post('/', async (req: Request, res: Response) => {
       allCourses,
       fixedLectures,
       blockedTimes,
-      targetCredits,
+      targetCredits, // Pass total target for scoring
+      remainingTargetCredits, // Pass remaining target for backtracking
+      fixedCredits, // Pass fixed credits
       parsedConstraints,
       requestData.strategy,
       requestData.tracks,
