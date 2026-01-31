@@ -10,6 +10,7 @@ interface CacheEntry {
 class AirtableService {
   private base: Airtable.Base;
   private cache: CacheEntry | null = null;
+  private cachePromise: Promise<Course[]> | null = null; // Promise caching for concurrent requests
   private readonly CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
   constructor() {
@@ -26,102 +27,113 @@ class AirtableService {
 
   /**
    * Fetch all courses from Airtable with caching
+   * Uses Promise caching to prevent concurrent duplicate API calls
    */
   async getCourses(major?: string, query?: string): Promise<Course[]> {
-    // Check cache
+    // Check cache first
     if (this.cache && Date.now() - this.cache.timestamp < this.CACHE_TTL) {
-      let courses = this.cache.data;
-      
-      // Apply filters
-      let filtered = courses;
-      if (major) {
-        // More flexible major matching (partial match or exact match)
-        const majorLower = major.toLowerCase();
-        filtered = filtered.filter(c => {
-          const courseMajor = (c.major || '').toLowerCase();
-          return courseMajor === majorLower || 
-                 courseMajor.includes(majorLower) || 
-                 majorLower.includes(courseMajor);
-        });
-      }
-      if (query) {
-        const lowerQuery = query.toLowerCase();
-        filtered = filtered.filter(c => 
-          c.name.toLowerCase().includes(lowerQuery) ||
-          c.courseId.toLowerCase().includes(lowerQuery) ||
-          c.tags.some(tag => tag.toLowerCase().includes(lowerQuery))
-        );
-      }
-      
+      const courses = this.cache.data;
+      const filtered = this.filterCourses(courses, major, query);
       console.log(`Airtable (cached): Filtered to ${filtered.length} courses (major: ${major || 'none'})`);
       return filtered;
     }
 
-    // Fetch from Airtable
-    const tableName = process.env.AIRTABLE_TABLE_NAME || 'Courses';
-    const records: AirtableRecord[] = [];
+    // If a fetch is already in progress, wait for it
+    if (this.cachePromise) {
+      console.log('Airtable: Waiting for ongoing fetch...');
+      const courses = await this.cachePromise;
+      const filtered = this.filterCourses(courses, major, query);
+      return filtered;
+    }
+
+    // Start new fetch and cache the Promise
+    this.cachePromise = this.fetchFromAirtable();
 
     try {
-      await this.base(tableName)
-        .select({
-          view: 'Grid view', // Adjust if needed
-        })
-        .eachPage((pageRecords, fetchNextPage) => {
-          // Convert Airtable Records to our AirtableRecord type
-          for (const record of pageRecords) {
-            records.push({
-              id: record.id,
-              fields: record.fields,
-            });
-          }
-          fetchNextPage();
-        });
-
-      // Normalize records to Course objects
-      const courses = records.map(record => this.normalizeRecord(record));
-
-      console.log(`Airtable: Fetched ${records.length} records, normalized to ${courses.length} courses`);
-
+      const courses = await this.cachePromise;
+      
       // Update cache
       this.cache = {
         data: courses,
         timestamp: Date.now(),
       };
 
-      // Apply filters
-      let filtered = courses;
-      if (major) {
-        // More flexible major matching (partial match or exact match)
-        const majorLower = major.toLowerCase();
-        filtered = filtered.filter(c => {
-          const courseMajor = (c.major || '').toLowerCase();
-          return courseMajor === majorLower || 
-                 courseMajor.includes(majorLower) || 
-                 majorLower.includes(courseMajor);
-        });
-      }
-      if (query) {
-        const lowerQuery = query.toLowerCase();
-        filtered = filtered.filter(c => 
-          c.name.toLowerCase().includes(lowerQuery) ||
-          c.courseId.toLowerCase().includes(lowerQuery) ||
-          c.tags.some(tag => tag.toLowerCase().includes(lowerQuery))
-        );
-      }
-
+      const filtered = this.filterCourses(courses, major, query);
       console.log(`Airtable: Fetched ${courses.length} total courses, filtered to ${filtered.length} courses (major: ${major || 'none'})`);
       return filtered;
     } catch (error) {
       console.error('=== ERROR fetching from Airtable ===');
       console.error('Error:', error);
-      console.error('Table name:', tableName);
       console.error('Major filter:', major);
       console.error('Query filter:', query);
       
       // Return empty array instead of throwing to allow graceful degradation
       console.warn('Returning empty courses array due to Airtable error');
       return [];
+    } finally {
+      // Clear the Promise cache after fetch completes (success or failure)
+      this.cachePromise = null;
     }
+  }
+
+  /**
+   * Fetch courses from Airtable API
+   * Private method that performs the actual API call
+   */
+  private async fetchFromAirtable(): Promise<Course[]> {
+    const tableName = process.env.AIRTABLE_TABLE_NAME || 'Courses';
+    const records: AirtableRecord[] = [];
+
+    await this.base(tableName)
+      .select({
+        view: 'Grid view', // Adjust if needed
+      })
+      .eachPage((pageRecords, fetchNextPage) => {
+        // Convert Airtable Records to our AirtableRecord type
+        for (const record of pageRecords) {
+          records.push({
+            id: record.id,
+            fields: record.fields,
+          });
+        }
+        fetchNextPage();
+      });
+
+    // Normalize records to Course objects
+    const courses = records.map(record => this.normalizeRecord(record));
+    console.log(`Airtable: Fetched ${records.length} records, normalized to ${courses.length} courses`);
+    
+    return courses;
+  }
+
+  /**
+   * Filter courses by major and/or query
+   * Extracted to avoid code duplication
+   */
+  private filterCourses(courses: Course[], major?: string, query?: string): Course[] {
+    let filtered = courses;
+
+    if (major) {
+      // More flexible major matching (partial match or exact match)
+      const majorLower = major.toLowerCase();
+      filtered = filtered.filter(c => {
+        const courseMajor = (c.major || '').toLowerCase();
+        return courseMajor === majorLower || 
+               courseMajor.includes(majorLower) || 
+               majorLower.includes(courseMajor);
+      });
+    }
+
+    if (query) {
+      const lowerQuery = query.toLowerCase();
+      filtered = filtered.filter(c => 
+        c.name.toLowerCase().includes(lowerQuery) ||
+        c.courseId.toLowerCase().includes(lowerQuery) ||
+        c.tags.some(tag => tag.toLowerCase().includes(lowerQuery))
+      );
+    }
+
+    return filtered;
   }
 
   /**
@@ -244,6 +256,7 @@ class AirtableService {
    */
   clearCache(): void {
     this.cache = null;
+    this.cachePromise = null; // Also clear Promise cache
   }
 }
 
