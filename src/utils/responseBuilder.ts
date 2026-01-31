@@ -251,6 +251,70 @@ function generateExplanation(
 }
 
 /**
+ * 결과 설명만 생성 (성공 케이스)
+ */
+export function generateResultExplanation(
+  candidate: TimetableCandidate,
+  targetCredits: number,
+  parsedConstraints: any
+): { explanation: string; warnings: string[] } {
+  return {
+    explanation: generateExplanation(candidate, targetCredits, parsedConstraints),
+    warnings: generateWarnings(candidate, targetCredits, parsedConstraints),
+  };
+}
+
+/**
+ * 실패 설명 생성
+ */
+export function generateFailureExplanation(
+  requestBody: any,
+  parsedConstraints: any,
+  targetCredits: number,
+  blockedTimes: BlockedTime[]
+): ErrorResponse {
+  const conflictingConstraints: string[] = [];
+  const suggestions: string[] = [];
+
+  // 충돌 원인 분석 (추측하지 않고 실제 데이터만 사용)
+  if (blockedTimes.length > 0) {
+    conflictingConstraints.push('차단 시간');
+    suggestions.push('차단 시간을 줄이거나 조정해주세요');
+  }
+
+  if (parsedConstraints.avoidDays && parsedConstraints.avoidDays.length > 0) {
+    conflictingConstraints.push('회피 요일');
+    const dayLabels: Record<DayOfWeek, string> = {
+      'MON': '월요일', 'TUE': '화요일', 'WED': '수요일',
+      'THU': '목요일', 'FRI': '금요일', 'SAT': '토요일', 'SUN': '일요일'
+    };
+    suggestions.push(`회피 요일(${parsedConstraints.avoidDays.map((d: DayOfWeek) => dayLabels[d]).join(', ')})을 SOFT 제약으로 변경`);
+  }
+
+  if (requestBody.basket && requestBody.basket.length > 0) {
+    conflictingConstraints.push('고정 과목');
+    suggestions.push('고정 과목 1개를 해제해주세요');
+  }
+
+  if (targetCredits > 15) {
+    suggestions.push(`목표 학점을 ${targetCredits - 3}로 낮추기`);
+  }
+
+  return {
+    error: 'HARD 제약 조건 충돌',
+    details: {
+      reason: '제약 조건을 모두 만족하는 시간표를 생성할 수 없습니다.',
+      conflictingConstraints: conflictingConstraints.length > 0 ? conflictingConstraints : [],
+      suggestions: suggestions.length > 0 ? suggestions : [
+        '제약 조건을 완화해주세요',
+        '목표 학점을 낮춰주세요',
+        '고정 과목을 줄여주세요'
+      ]
+    }
+  };
+}
+
+/**
  * 시간표 추천 결과 JSON 응답 생성
  */
 export function buildRecommendationResponse(
@@ -271,45 +335,7 @@ export function buildRecommendationResponse(
 
   // HARD 제약 만족 후보가 없으면 실패 응답
   if (validCandidates.length === 0) {
-    const conflictingConstraints: string[] = [];
-    const suggestions: string[] = [];
-
-    // 충돌 원인 분석
-    if (blockedTimes.length > 0) {
-      conflictingConstraints.push('차단 시간');
-      suggestions.push('차단 시간을 줄이거나 조정해주세요');
-    }
-
-    if (parsedConstraints.avoidDays && parsedConstraints.avoidDays.length > 0) {
-      conflictingConstraints.push('회피 요일');
-      const dayLabels: Record<DayOfWeek, string> = {
-        'MON': '월요일', 'TUE': '화요일', 'WED': '수요일',
-        'THU': '목요일', 'FRI': '금요일', 'SAT': '토요일', 'SUN': '일요일'
-      };
-      suggestions.push(`회피 요일(${parsedConstraints.avoidDays.map((d: DayOfWeek) => dayLabels[d]).join(', ')})을 SOFT 제약으로 변경`);
-    }
-
-    if (requestBody.basket && requestBody.basket.length > 0) {
-      conflictingConstraints.push('고정 과목');
-      suggestions.push('고정 과목 1개를 해제해주세요');
-    }
-
-    if (targetCredits > 15) {
-      suggestions.push(`목표 학점을 ${targetCredits - 3}로 낮추기`);
-    }
-
-    return {
-      error: 'HARD 제약 조건 충돌',
-      details: {
-        reason: '제약 조건을 모두 만족하는 시간표를 생성할 수 없습니다.',
-        conflictingConstraints,
-        suggestions: suggestions.length > 0 ? suggestions : [
-          '제약 조건을 완화해주세요',
-          '목표 학점을 낮춰주세요',
-          '고정 과목을 줄여주세요'
-        ]
-      }
-    };
+    return generateFailureExplanation(requestBody, parsedConstraints, targetCredits, blockedTimes);
   }
 
   // score 내림차순 정렬
