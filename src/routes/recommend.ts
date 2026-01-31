@@ -1,125 +1,253 @@
 import { Router, Request, Response } from 'express';
-import { validateRecommendationRequest } from '../utils/validation';
 import airtableService from '../services/airtableService';
 import geminiService from '../services/geminiService';
 import schedulerService from '../services/schedulerService';
-import { RecommendationRequest, RecommendationResponse } from '../types';
+import { z } from 'zod';
+import { DayOfWeek, TimeSlot } from '../types';
+import { parseTimeRange, parseKoreanDay } from '../utils/timeParser';
 
 const router = Router();
+
+// Frontend request schema
+const recommendRequestSchema = z.object({
+  basket: z.array(z.object({
+    title: z.string(),
+    professor: z.string().optional(),
+    code: z.string(),
+    credits: z.number(),
+    day: z.string(),
+    startHour: z.number(),
+    duration: z.number(),
+  })).optional().default([]),
+  blockedTimes: z.array(z.object({
+    day: z.string(),
+    startTime: z.string().optional(),
+    endTime: z.string().optional(),
+    startHour: z.number().optional(),
+    duration: z.number().optional(),
+  })).optional().default([]),
+  strategy: z.enum(['MAJOR_FOCUS', 'MIX', 'INTEREST_FOCUS']).default('MIX'),
+  tracks: z.array(z.string()).optional().default([]),
+  interests: z.array(z.string()).optional().default([]),
+  constraints: z.record(z.union([z.string(), z.boolean()])).optional().default({}),
+  freeTextRequest: z.string().optional(),
+  // Optional: for backward compatibility
+  user: z.object({
+    name: z.string(),
+    major: z.string(),
+    studentIdYear: z.number(),
+    grade: z.number(),
+    semester: z.number(),
+  }).optional(),
+  targetCredits: z.number().optional(),
+});
 
 /**
  * POST /api/recommend
  * Generate timetable recommendations
+ * 
+ * Request: { "basket": [...], "blockedTimes": [], "strategy": "MIX", ... }
+ * Response: { "recommendations": [{ "courses": [...] }] }
  */
 router.post('/', async (req: Request, res: Response) => {
   try {
     // Validate request
-    const requestData = validateRecommendationRequest(req.body) as RecommendationRequest;
+    const validationResult = recommendRequestSchema.safeParse(req.body);
+    
+    if (!validationResult.success) {
+      res.status(400).json({
+        error: {
+          message: 'Invalid request data',
+          details: validationResult.error.errors,
+        },
+      });
+      return;
+    }
+
+    const requestData = validationResult.data;
+
+    // Convert frontend basket to fixedLectures format
+    const fixedLectures = requestData.basket.map(course => {
+      const day = parseKoreanDay(course.day) || 'MON';
+      const startTime = `${course.startHour.toString().padStart(2, '0')}:00`;
+      const endHour = course.startHour + course.duration;
+      const endTime = `${endHour.toString().padStart(2, '0')}:00`;
+
+      return {
+        courseId: course.code,
+        meetingTimes: [{
+          day: day as DayOfWeek,
+          startTime,
+          endTime,
+        }],
+      };
+    });
+
+    // Convert blockedTimes format
+    const blockedTimes = requestData.blockedTimes.map(blocked => {
+      let startTime: string;
+      let endTime: string;
+      
+      if (blocked.startTime && blocked.endTime) {
+        startTime = blocked.startTime;
+        endTime = blocked.endTime;
+      } else if (blocked.startHour !== undefined && blocked.duration !== undefined) {
+        startTime = `${blocked.startHour.toString().padStart(2, '0')}:00`;
+        const endHour = blocked.startHour + blocked.duration;
+        endTime = `${endHour.toString().padStart(2, '0')}:00`;
+      } else {
+        throw new Error('Invalid blockedTime format');
+      }
+
+      const day = parseKoreanDay(blocked.day) || 'MON';
+      return {
+        day: day as DayOfWeek,
+        startTime,
+        endTime,
+      };
+    });
+
+    // Convert constraints from frontend format to internal format
+    const constraints: any = {};
+    
+    // Parse constraint values
+    for (const [key, value] of Object.entries(requestData.constraints || {})) {
+      if (typeof value === 'string') {
+        // Handle string values like "MON_WED_FRI", "avoid_morning", etc.
+        if (value.includes('_') && ['MON', 'TUE', 'WED', 'THU', 'FRI'].some(d => value.includes(d))) {
+          // Day-based constraint
+          const days = value.split('_').filter(d => ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].includes(d)) as DayOfWeek[];
+          if (days.length > 0) {
+            if (key.includes('avoid') || value.startsWith('MON') || value.startsWith('TUE') || value.startsWith('WED') || value.startsWith('THU') || value.startsWith('FRI')) {
+              constraints.avoidDays = [...(constraints.avoidDays || []), ...days];
+            }
+          }
+        } else if (value === 'avoid_morning') {
+          constraints.avoidMorning = true;
+        } else if (value === 'keep_lunch_time') {
+          constraints.keepLunchTime = true;
+        } else if (value === 'avoid_team_projects') {
+          constraints.avoidTeamProjects = true;
+        } else if (value === 'prefer_online') {
+          constraints.preferOnlineClasses = true;
+        } else if (value.startsWith('max_') && value.includes('_per_day')) {
+          const match = value.match(/max_(\d+)_per_day/);
+          if (match) {
+            constraints.maxClassesPerDay = parseInt(match[1], 10);
+          }
+        } else if (value.startsWith('max_') && value.includes('_consecutive')) {
+          const match = value.match(/max_(\d+)_consecutive/);
+          if (match) {
+            constraints.maxConsecutiveClasses = parseInt(match[1], 10);
+          }
+        }
+      } else if (typeof value === 'boolean') {
+        // Handle boolean constraints
+        if (key.includes('avoidMorning') || key.includes('morning')) {
+          constraints.avoidMorning = value;
+        } else if (key.includes('lunch') || key.includes('Lunch')) {
+          constraints.keepLunchTime = value;
+        } else if (key.includes('team') || key.includes('Team')) {
+          constraints.avoidTeamProjects = value;
+        } else if (key.includes('online') || key.includes('Online')) {
+          constraints.preferOnlineClasses = value;
+        }
+      }
+    }
 
     // Parse free text constraints using Gemini
-    let parsedConstraints = { ...requestData.constraints };
+    let parsedConstraints = { ...constraints };
     let geminiUsed = false;
 
     if (requestData.freeTextRequest && requestData.freeTextRequest.trim()) {
       const geminiConstraints = await geminiService.parseConstraints(requestData.freeTextRequest);
       if (geminiConstraints) {
         geminiUsed = true;
-        // Merge Gemini constraints with UI constraints (UI overrides Gemini for non-array fields)
+        // Merge Gemini constraints with UI constraints
         parsedConstraints = {
-          // Start with Gemini constraints
           ...geminiConstraints,
-          // Override with UI constraints (UI takes precedence)
-          ...requestData.constraints,
-          // Array fields: merge and deduplicate (UI values take precedence in ordering)
+          ...constraints,
           avoidDays: [
-            ...(requestData.constraints.avoidDays || []),
+            ...(constraints.avoidDays || []),
             ...(geminiConstraints.avoidDays || []),
-          ].filter((v: string, i: number, a: string[]) => a.indexOf(v) === i),
-          preferOnlineOnlyDays: [
-            ...(requestData.constraints.preferOnlineOnlyDays || []),
-            ...(geminiConstraints.preferOnlineOnlyDays || []),
           ].filter((v: string, i: number, a: string[]) => a.indexOf(v) === i),
         };
       }
     }
 
+    // Get user major from request or use default
+    const userMajor = requestData.user?.major || '컴퓨터공학';
+    
     // Fetch available courses
-    const allCourses = await airtableService.getCourses(requestData.user.major);
+    const allCourses = await airtableService.getCourses(userMajor);
+
+    // Calculate target credits from basket or use default
+    const basketCredits = requestData.basket.reduce((sum, course) => sum + course.credits, 0);
+    const targetCredits = requestData.targetCredits || (18 - basketCredits);
 
     // Generate candidate timetables
     const candidates = schedulerService.generateCandidates(
       allCourses,
-      requestData.fixedLectures,
-      requestData.blockedTimes,
-      requestData.targetCredits,
+      fixedLectures,
+      blockedTimes,
+      targetCredits,
       parsedConstraints,
       requestData.strategy,
       requestData.tracks,
       requestData.interests
     );
 
-    // Take top candidates
-    const topCandidates = candidates.slice(0, 10);
+    // Take top candidates (limit to 3 for frontend)
+    const topCandidates = candidates.slice(0, 3);
 
-    // Try to refine with Gemini (optional, fails gracefully)
-    let refinedRankings: Array<{ rank: number; explanation: string }> | null = null;
-    if (topCandidates.length > 0) {
-      refinedRankings = await geminiService.refineRecommendations(
-        topCandidates,
-        requestData.freeTextRequest || ''
-      );
-    }
+    // Convert to frontend format
+    const recommendations = topCandidates.map((candidate) => {
+      // Convert courses to frontend format
+      const courses = candidate.courses.map(course => {
+        // Get first meeting time for display
+        const firstMeeting = course.meetingTimes[0];
+        const startHour = parseInt(firstMeeting.startTime.split(':')[0], 10);
+        const endHour = parseInt(firstMeeting.endTime.split(':')[0], 10);
+        const duration = endHour - startHour;
 
-    // Build response
-    const recommendations = topCandidates.map((candidate, index) => {
-      const rank = index + 1;
-      let explanation = `총 ${candidate.totalCredits}학점, ${candidate.courses.length}개 과목으로 구성된 시간표입니다.`;
-      
-      // Use Gemini explanation if available
-      if (refinedRankings) {
-        const refined = refinedRankings.find(r => r.rank === rank);
-        if (refined) {
-          explanation = refined.explanation;
-        }
-      }
+        const dayLabels: Record<DayOfWeek, string> = {
+          'MON': '월',
+          'TUE': '화',
+          'WED': '수',
+          'THU': '목',
+          'FRI': '금',
+          'SAT': '토',
+          'SUN': '일',
+        };
+
+        return {
+          title: course.name,
+          professor: course.instructor || '',
+          code: course.courseId,
+          credits: course.credits,
+          day: dayLabels[firstMeeting.day] || firstMeeting.day,
+          startHour,
+          duration,
+        };
+      });
 
       return {
-        rank,
-        totalCredits: candidate.totalCredits,
-        score: candidate.score,
-        explanation,
-        warnings: candidate.warnings,
-        courses: candidate.courses,
-        timetableGrid: candidate.timetableGrid,
+        courses,
       };
     });
 
-    const response: RecommendationResponse = {
+    res.json({
       recommendations,
-      debug: {
-        candidatesGenerated: candidates.length,
-        geminiUsed,
-      },
-    };
-
-    res.json(response);
+    });
   } catch (error: any) {
     console.error('Error generating recommendations:', error);
 
-    if (error.name === 'ZodError') {
-      res.status(400).json({
-        error: {
-          message: 'Invalid request data',
-          details: error.errors,
-        },
-      });
-    } else {
-      res.status(500).json({
-        error: {
-          message: 'Failed to generate recommendations',
-        },
-      });
-    }
+    res.status(500).json({
+      error: {
+        message: 'Failed to generate recommendations',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined,
+      },
+    });
   }
 });
 
