@@ -25,9 +25,16 @@ app.use((req, res, next) => {
 });
 
 // Routes
+// GET /health
 app.use('/health', healthRouter);
+
+// GET /api/courses
 app.use('/api/courses', coursesRouter);
+
+// POST /api/recommend
 app.use('/api/recommend', recommendRouter);
+
+// POST /api/parse-condition (exact match with frontend)
 app.use('/api/parse-condition', parseConditionRouter);
 
 // 404 handler

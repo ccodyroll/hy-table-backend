@@ -18,6 +18,8 @@ const parseConditionSchema = z.object({
  * POST /api/parse-condition
  * Parse Korean natural language constraints to structured format
  * 
+ * Route: POST /api/parse-condition (exact match with frontend)
+ * 
  * Request: { "input": "...", "currentConditions": [...] }
  * Response: { "conditions": [{ "type": "...", "label": "...", "value": "..." }] }
  */
