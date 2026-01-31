@@ -73,7 +73,7 @@ export function parseMeetingTimes(timeString: string): TimeSlot[] {
     const timeRange = part.substring(dayMatch[0].length).trim();
     
     // Match HH:MM-HH:MM or H:MM AM/PM - H:MM AM/PM
-    const timeMatch = timeRange.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?)\s*[-–]\s*(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+    const timeMatch = timeRange.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?\s*[-–]\s*(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
     
     if (timeMatch) {
       let startHours = parseInt(timeMatch[1], 10);

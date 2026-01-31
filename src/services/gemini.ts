@@ -46,7 +46,7 @@ class GeminiService {
     candidates: TimetableCandidate[],
     request: RecommendRequest
   ): ScoredTimetable[] {
-    return candidates.map((candidate, index) => {
+    return candidates.map((candidate) => {
       let score = 50; // Base score
       const warnings: string[] = [];
 
@@ -81,7 +81,10 @@ class GeminiService {
             c.tags?.some(tag => tag.toLowerCase().includes(interest.toLowerCase()))
           )
         );
-        const balance = 1 - Math.abs((majorCourses.length / candidate.courses.length) - 0.5);
+        // Balance between major and interest courses
+        const majorRatio = candidate.courses.length > 0 ? majorCourses.length / candidate.courses.length : 0;
+        const interestRatio = candidate.courses.length > 0 ? interestMatches.length / candidate.courses.length : 0;
+        const balance = 1 - Math.abs(majorRatio - interestRatio);
         score += balance * 20;
       }
 

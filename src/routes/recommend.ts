@@ -62,11 +62,12 @@ router.post('/', async (req: Request, res: Response) => {
         errors: validationResult.error.errors 
       });
 
-      return res.status(400).json({
+      res.status(400).json({
         error: 'Invalid request body',
         details: validationResult.error.errors,
         requestId
       });
+      return;
     }
 
     const request: RecommendRequest = validationResult.data;
