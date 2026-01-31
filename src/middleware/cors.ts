@@ -7,23 +7,37 @@ interface CorsOptions {
   allowedHeaders: string[];
 }
 
-// Default allowed origins
-const defaultAllowedOrigins = [
-  'https://dimly-sculpt-50893962.figma.site',
+// Figma iframe preview 도메인 패턴 (정규식)
+const FIGMA_SITE_PATTERN = /^https:\/\/.*\.figma\.site$/;
+
+// Static allowed origins
+const staticAllowedOrigins = [
   'http://localhost:3000',
 ];
 
 const corsOptions: CorsOptions = {
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-    // Get allowed origins from environment or use defaults
+    // Allow requests with no origin (mobile apps, Postman, etc.)
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    // Check if origin matches Figma site pattern (https://*.figma.site)
+    if (FIGMA_SITE_PATTERN.test(origin)) {
+      return callback(null, true);
+    }
+
+    // Check static allowed origins
+    if (staticAllowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    // Check environment variable origins
     const envOrigins = process.env.CORS_ORIGIN
       ? process.env.CORS_ORIGIN.split(',').map((o: string) => o.trim())
       : [];
     
-    const allowedOrigins = [...defaultAllowedOrigins, ...envOrigins];
-
-    // Allow requests with no origin (mobile apps, Postman, etc.)
-    if (!origin) {
+    if (envOrigins.includes(origin)) {
       return callback(null, true);
     }
 
@@ -32,15 +46,12 @@ const corsOptions: CorsOptions = {
       return callback(null, true);
     }
 
-    if (allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      console.warn(`CORS blocked origin: ${origin}`);
-      callback(new Error('Not allowed by CORS'));
-    }
+    // Origin not allowed
+    console.warn(`CORS blocked origin: ${origin}`);
+    callback(new Error('Not allowed by CORS'));
   },
-  credentials: false, // credentials 사용하지 않음
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'], // 모든 주요 메서드 허용
+  credentials: false, // allow_credentials=False
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'], // allow_methods=["*"]
   allowedHeaders: [
     'Content-Type',
     'Authorization',
@@ -49,7 +60,9 @@ const corsOptions: CorsOptions = {
     'Origin',
     'Access-Control-Request-Method',
     'Access-Control-Request-Headers',
-  ], // 모든 주요 헤더 허용
+    'X-CSRF-Token',
+    'X-API-Key',
+  ], // allow_headers=["*"] - 주요 헤더 모두 포함
 };
 
 export default corsModule(corsOptions);
