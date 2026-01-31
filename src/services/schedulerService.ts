@@ -143,7 +143,7 @@ class SchedulerService {
     candidates: TimetableCandidate[],
     maxCandidates: number
   ): void {
-    // Base case: reached target credits or no more valid courses
+    // Base case: reached max candidates
     if (candidates.length >= maxCandidates) {
       return;
     }
@@ -151,8 +151,12 @@ class SchedulerService {
     // Total credits = fixed credits + current credits from selection
     const totalCredits = fixedCredits + currentCredits;
 
-    // Check if we've reached the remaining target (fixed + remaining = total target)
-    if (currentCredits >= remainingTargetCredits) {
+    // Define target range: allow some flexibility around the target
+    const minTarget = Math.max(0, remainingTargetCredits - 2); // Allow 2 credits below target
+    const maxTarget = remainingTargetCredits + 3; // Allow 3 credits above target
+
+    // Check if we've reached the minimum target
+    if (currentCredits >= minTarget) {
       // Check if selection is valid
       if (this.isValidSelection(currentSelection, constraints)) {
         const allSlots = this.buildTimetableGrid(currentSelection, fixedLectures);
@@ -165,7 +169,12 @@ class SchedulerService {
           warnings: [],
         });
       }
-      return;
+      
+      // Continue exploring even after reaching target to find better combinations
+      // But stop if we've exceeded the maximum target by too much
+      if (currentCredits >= maxTarget) {
+        return;
+      }
     }
 
     // Try adding each remaining course
@@ -173,8 +182,8 @@ class SchedulerService {
       const course = courses[i];
 
       // Skip if adding this course would exceed reasonable limits
-      // remainingTargetCredits is the target for additional courses, so check against that
-      if (currentCredits + course.credits > remainingTargetCredits + 3) {
+      // Allow up to maxTarget + 3 for flexibility
+      if (currentCredits + course.credits > maxTarget + 3) {
         continue;
       }
 
