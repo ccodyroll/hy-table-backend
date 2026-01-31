@@ -402,7 +402,40 @@ export function buildRecommendationResponse(
       usedColors.add(color);
 
       // 첫 번째 meeting time 사용 (일반적으로 하나의 시간대)
+      // meetingTimes가 비어있을 수 있으므로 체크
+      if (!course.meetingTimes || course.meetingTimes.length === 0) {
+        // meetingTimes가 없으면 기본값 사용
+        return {
+          id: course.courseId,
+          name: course.name,
+          code: course.courseId,
+          credits: course.credits,
+          professor: course.instructor || '',
+          type: course.deliveryType || course.category || 'OFFLINE',
+          day: 0, // 기본값: 월요일
+          startHour: 9, // 기본값: 09:00
+          duration: 2, // 기본값: 1시간
+          color,
+        };
+      }
+
       const firstMeeting = course.meetingTimes[0];
+      if (!firstMeeting || !firstMeeting.startTime || !firstMeeting.endTime) {
+        // firstMeeting이 유효하지 않으면 기본값 사용
+        return {
+          id: course.courseId,
+          name: course.name,
+          code: course.courseId,
+          credits: course.credits,
+          professor: course.instructor || '',
+          type: course.deliveryType || course.category || 'OFFLINE',
+          day: 0, // 기본값: 월요일
+          startHour: 9, // 기본값: 09:00
+          duration: 2, // 기본값: 1시간
+          color,
+        };
+      }
+
       const startHour = parseInt(firstMeeting.startTime.split(':')[0], 10);
       const endHour = parseInt(firstMeeting.endTime.split(':')[0], 10);
       const duration = endHour - startHour;
@@ -414,7 +447,7 @@ export function buildRecommendationResponse(
         credits: course.credits,
         professor: course.instructor || '',
         type: course.deliveryType || course.category || 'OFFLINE',
-        day: dayToNumber[firstMeeting.day],
+        day: dayToNumber[firstMeeting.day] ?? 0,
         startHour,
         duration,
         color,
