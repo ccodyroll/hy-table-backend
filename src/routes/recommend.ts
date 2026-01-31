@@ -260,7 +260,7 @@ router.post('/', async (req: Request, res: Response) => {
 
     // Extract candidates and debug info
     const candidates = result.candidates;
-    const debugInfo = result.debug || {};
+    const debugInfo: { candidatesGenerated?: number; combinationsFilteredByBlockedTimes?: number } = result.debug || {};
 
     // Take top candidates (limit to 3 for frontend)
     const topCandidates = candidates.slice(0, 3);
