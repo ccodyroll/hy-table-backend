@@ -83,10 +83,14 @@ export function parseMeetingTimes(meetingTimeStr: string): TimeSlot[] {
   const normalized = meetingTimeStr.trim();
   if (!normalized) return [];
 
-  // Split by comma first (for multiple time slots)
-  const parts = normalized.split(',').map(p => p.trim()).filter(p => p);
+  // Split by semicolon or comma first (for multiple time slots)
+  // Airtable format uses semicolon: "월 16:00-17:30 (경영관 101강의실); 월 17:30-19:00 (경영관 101강의실)"
+  const parts = normalized.split(/[;,]/).map(p => p.trim()).filter(p => p);
 
-  for (const part of parts) {
+  for (let part of parts) {
+    // Remove location info in parentheses (e.g., "(경영관 101강의실)")
+    // This is for Airtable schedule_text format: "월 16:00-17:30 (경영관 101강의실)"
+    part = part.replace(/\s*\([^)]*\)\s*/g, '').trim();
     // Try multiple patterns
     
     // Pattern 0: Airtable format "수(15:00-17:00)" or "월(09:00-10:30), 수(15:00-17:00)"

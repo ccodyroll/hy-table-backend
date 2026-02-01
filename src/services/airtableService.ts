@@ -79,12 +79,17 @@ class AirtableService {
   /**
    * Fetch courses from Airtable API
    * Private method that performs the actual API call
+   * Uses table ID (tbl8Mza7Z65g7Pton) for stability
    */
   private async fetchFromAirtable(): Promise<Course[]> {
+    // Use table ID for stability (table name changes won't break the API)
+    const tableId = process.env.AIRTABLE_TABLE_ID || 'tbl8Mza7Z65g7Pton';
     const tableName = process.env.AIRTABLE_TABLE_NAME || 'Courses';
+    // Try table ID first, fallback to table name
+    const table = this.base(tableId) || this.base(tableName);
     const records: AirtableRecord[] = [];
 
-    await this.base(tableName)
+    await table
       .select({
         view: 'Grid view', // Adjust if needed
       })
@@ -138,54 +143,64 @@ class AirtableService {
 
   /**
    * Normalize Airtable record to Course object
-   * Adjust field names based on your Airtable schema
+   * Updated for new schema with field IDs
+   * Field IDs are used first, then fallback to field names for backward compatibility
    */
   private normalizeRecord(record: AirtableRecord): Course {
     const fields = record.fields;
 
-    // Parse meeting times - adjust field name as needed
-    // Try multiple possible field names (case-insensitive search)
-    const courseName = fields.name || fields['Name'] || fields['과목명'] || record.id;
-    const allFieldKeys = Object.keys(fields);
+    // Field ID mappings (primary) - fallback to field names for backward compatibility
+    // course_name (fldxBRALu8pnBwGvn)
+    const courseName = fields['fldxBRALu8pnBwGvn'] || fields.course_name || fields.name || fields['Name'] || fields['과목명'] || record.id;
     
-    // Try exact matches first
-    let meetingTimeValue: any = fields['요일_시간'] ||
-                                fields['요일 시간'] ||
-                                fields.meetingTimes || 
-                                fields['Meeting Times'] || 
-                                fields['meeting_times'] ||
-                                fields['meetingTimes'] ||
-                                fields['시간'] || 
-                                fields['시간표'] ||
-                                fields['schedule'] ||
-                                fields['Schedule'] ||
-                                fields['time'] ||
-                                fields['Time'] ||
-                                '';
+    // id (fldnrkAKox1BAjAp1) - e.g., "2026_1_BUS1059_11347"
+    const courseId = fields['fldnrkAKox1BAjAp1'] || fields.id || fields.courseId || fields['Course ID'] || record.id;
     
-    // If not found, try case-insensitive search
-    if (!meetingTimeValue) {
-      const timeFieldKeys = allFieldKeys.filter(key => {
-        const lowerKey = key.toLowerCase();
-        return lowerKey.includes('요일') ||
-               lowerKey.includes('time') || 
-               lowerKey.includes('시간') || 
-               lowerKey.includes('schedule') ||
-               lowerKey.includes('시간표') ||
-               lowerKey.includes('meeting');
-      });
-      
-      if (timeFieldKeys.length > 0) {
-        // Try the first matching field
-        meetingTimeValue = fields[timeFieldKeys[0]];
-        console.log(`[INFO] Found potential time field "${timeFieldKeys[0]}" for course "${courseName}":`, meetingTimeValue);
-      }
+    // course_code (fldqgpYh3n8lpCDj4) - e.g., "11347"
+    const courseCode = fields['fldqgpYh3n8lpCDj4'] || fields.course_code || '';
+    
+    // professor (fldyYL2fEvg61cTZY)
+    const instructor = fields['fldyYL2fEvg61cTZY'] || fields.professor || fields.instructor || fields['Instructor'] || fields['교수'] || undefined;
+    
+    // classification (fldkXofStJWCLRFpL) - Single select
+    const category = fields['fldkXofStJWCLRFpL'] || fields.classification || fields.category || fields['Category'] || fields['분류'] || '';
+    
+    // credit (fldtXa5UzuOayoKS1)
+    const credits = Number(fields['fldtXa5UzuOayoKS1'] || fields.credit || fields.credits || fields['Credits'] || fields['학점'] || 0);
+    
+    // capacity (fldGifKoI5xDcvCP1)
+    const capacity = fields['fldGifKoI5xDcvCP1'] || fields.capacity || fields['Capacity'] || fields['정원'];
+    const capacityNum = capacity ? Number(capacity) : undefined;
+    
+    // lecture_type (fldv3ZYOBW2kKqh10) - Single select
+    const lectureType = fields['fldv3ZYOBW2kKqh10'] || fields.lecture_type || fields.deliveryType || fields['Delivery Type'] || fields['수업방식'] || '오프라인';
+    
+    // Map lecture_type to deliveryType
+    let deliveryType: 'ONLINE' | 'OFFLINE' | 'HYBRID' = 'OFFLINE';
+    const lectureTypeStr = lectureType.toString().toLowerCase();
+    if (lectureTypeStr.includes('온라인') || lectureTypeStr === 'online') {
+      deliveryType = 'ONLINE';
+    } else if (lectureTypeStr.includes('혼합') || lectureTypeStr.includes('blended') || lectureTypeStr === 'hybrid') {
+      deliveryType = 'HYBRID';
+    } else {
+      deliveryType = 'OFFLINE';
     }
+    
+    // schedule_text (fld7XicgiX9cukCAu) - Long text, contains time schedule
+    // Format: "월 16:00-17:30 (경영관 101강의실); 월 17:30-19:00 (경영관 101강의실)"
+    let meetingTimeValue: any = fields['fld7XicgiX9cukCAu'] || fields.schedule_text || 
+                                fields['요일_시간'] || fields['요일 시간'] ||
+                                fields.meetingTimes || fields['Meeting Times'] || 
+                                fields['meeting_times'] || fields['meetingTimes'] ||
+                                fields['시간'] || fields['시간표'] ||
+                                fields['schedule'] || fields['Schedule'] ||
+                                fields['time'] || fields['Time'] ||
+                                '';
     
     // Handle array format from Airtable
     let meetingTimeStr = '';
     if (Array.isArray(meetingTimeValue)) {
-      meetingTimeStr = meetingTimeValue.join(', ');
+      meetingTimeStr = meetingTimeValue.join('; ');
     } else if (typeof meetingTimeValue === 'string') {
       meetingTimeStr = meetingTimeValue;
     } else if (meetingTimeValue && typeof meetingTimeValue === 'object') {
@@ -196,58 +211,73 @@ class AirtableService {
     // Debug: log if meetingTimes is empty
     if (!meetingTimeStr) {
       console.warn(`[WARNING] Course "${courseName}" (${record.id}) has no meetingTimes field.`);
-      console.warn(`  Available fields:`, allFieldKeys);
-      console.warn(`  Sample field values (first 5):`, 
-        allFieldKeys.slice(0, 5).reduce((acc, key) => {
-          acc[key] = typeof fields[key] === 'string' ? fields[key].substring(0, 50) : fields[key];
-          return acc;
-        }, {} as Record<string, any>)
-      );
     }
     
     const meetingTimes = parseMeetingTimes(meetingTimeStr);
     
     // Debug: log if parsing failed
     if (meetingTimeStr && meetingTimes.length === 0) {
-      const courseName = fields.name || fields['Name'] || fields['과목명'] || record.id;
       console.warn(`[WARNING] Failed to parse meetingTimes for "${courseName}": "${meetingTimeStr}"`);
     }
 
-    // Parse tags - handle both string and array formats
+    // interest_categories (fldVAPyjkCSXv6D65) - Multiple select
+    // ai_tags (fldkv2NYfExqtJ5hW) - Multiple select
+    // Combine both into tags array
+    const interestCategories = fields['fldVAPyjkCSXv6D65'] || fields.interest_categories || [];
+    const aiTags = fields['fldkv2NYfExqtJ5hW'] || fields.ai_tags || [];
+    
     let tags: string[] = [];
-    if (Array.isArray(fields.tags || fields['Tags'] || fields['태그'])) {
-      tags = fields.tags || fields['Tags'] || fields['태그'] || [];
-    } else if (typeof (fields.tags || fields['Tags'] || fields['태그']) === 'string') {
-      tags = (fields.tags || fields['Tags'] || fields['태그'] || '').split(',').map((t: string) => t.trim());
+    // Handle interest_categories (array of strings)
+    if (Array.isArray(interestCategories)) {
+      tags = [...interestCategories];
+    } else if (typeof interestCategories === 'string') {
+      tags = interestCategories.split(',').map((t: string) => t.trim()).filter(Boolean);
+    }
+    
+    // Handle ai_tags (array of strings)
+    if (Array.isArray(aiTags)) {
+      tags = [...tags, ...aiTags];
+    } else if (typeof aiTags === 'string') {
+      const aiTagsArray = aiTags.split(',').map((t: string) => t.trim()).filter(Boolean);
+      tags = [...tags, ...aiTagsArray];
+    }
+    
+    // Fallback to old field names for backward compatibility
+    if (tags.length === 0) {
+      if (Array.isArray(fields.tags || fields['Tags'] || fields['태그'])) {
+        tags = fields.tags || fields['Tags'] || fields['태그'] || [];
+      } else if (typeof (fields.tags || fields['Tags'] || fields['태그']) === 'string') {
+        tags = (fields.tags || fields['Tags'] || fields['태그'] || '').split(',').map((t: string) => t.trim());
+      }
     }
 
-    // Parse delivery type
-    const deliveryTypeStr = (fields.deliveryType || fields['Delivery Type'] || fields['수업방식'] || 'OFFLINE').toString().toUpperCase();
-    const deliveryType = ['ONLINE', 'OFFLINE', 'HYBRID'].includes(deliveryTypeStr) 
-      ? deliveryTypeStr as 'ONLINE' | 'OFFLINE' | 'HYBRID'
-      : 'OFFLINE';
-
-    // Parse restrictions
+    // restrictions (fldYU6iYuGyEu6dWY)
     let restrictions: string[] = [];
-    if (Array.isArray(fields.restrictions || fields['Restrictions'] || fields['제한사항'])) {
-      restrictions = fields.restrictions || fields['Restrictions'] || fields['제한사항'] || [];
-    } else if (typeof (fields.restrictions || fields['Restrictions'] || fields['제한사항']) === 'string') {
-      restrictions = (fields.restrictions || fields['Restrictions'] || fields['제한사항'] || '').split(',').map((r: string) => r.trim());
+    const restrictionsValue = fields['fldYU6iYuGyEu6dWY'] || fields.restrictions || fields['Restrictions'] || fields['제한사항'];
+    if (Array.isArray(restrictionsValue)) {
+      restrictions = restrictionsValue;
+    } else if (typeof restrictionsValue === 'string') {
+      restrictions = restrictionsValue.split(',').map((r: string) => r.trim()).filter(Boolean);
     }
+    
+    // For major, use classification or Area field
+    // Area (fldKu4Pa3e5zDUo3f) - might contain major info
+    const area = fields['fldKu4Pa3e5zDUo3f'] || fields.Area || '';
+    const major = fields.major || fields['Major'] || fields['전공'] || area || category || '';
 
     return {
-      courseId: (fields.courseId || fields['Course ID'] || fields['과목코드'] || fields.id || record.id).toString(),
-      name: (fields.name || fields['Name'] || fields['과목명'] || '').toString(),
-      credits: Number(fields.credits || fields['Credits'] || fields['학점'] || 0),
-      major: (fields.major || fields['Major'] || fields['전공'] || '').toString(),
-      category: (fields.category || fields['Category'] || fields['분류'] || '').toString(),
+      courseId: courseId.toString(),
+      name: courseName.toString(),
+      credits,
+      major,
+      category: category.toString(),
       tags,
       meetingTimes,
       deliveryType,
       restrictions,
-      instructor: fields.instructor || fields['Instructor'] || fields['교수'] || undefined,
-      capacity: fields.capacity || fields['Capacity'] || fields['정원'] ? Number(fields.capacity || fields['Capacity'] || fields['정원']) : undefined,
-      enrolled: fields.enrolled || fields['Enrolled'] || fields['수강인원'] ? Number(fields.enrolled || fields['Enrolled'] || fields['수강인원']) : undefined,
+      instructor,
+      capacity: capacityNum,
+      enrolled: undefined, // Not in new schema
     };
   }
 
