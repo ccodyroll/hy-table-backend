@@ -21,6 +21,11 @@ export function parseKoreanDay(dayStr: string): DayOfWeek | null {
     '일요일': 'SUN',
   };
 
+  // "무"는 처리하지 않음 (null 반환)
+  if (dayStr === '무') {
+    return null;
+  }
+
   return dayMap[dayStr] || null;
 }
 
@@ -82,6 +87,42 @@ export function parseMeetingTimes(meetingTimeStr: string): TimeSlot[] {
   // Normalize the string: remove extra whitespace
   const normalized = meetingTimeStr.trim();
   if (!normalized) return [];
+
+  // Check if this is pipe-separated format first (e.g., "목|16:00-17:30|오프라인|제2공학관 204강의실")
+  // Format: "요일|시간|수업방식|강의실" or multiple separated by " / "
+  if (normalized.includes('|')) {
+    // Handle pipe-separated format
+    // Split by " / " or " /" or "/ " or just "/" for multiple entries
+    const pipeParts = normalized.split(/\s*\/\s*/).map(p => p.trim()).filter(p => p);
+    
+    for (const pipePart of pipeParts) {
+      const segments = pipePart.split('|').map(s => s.trim()).filter(s => s);
+      if (segments.length >= 2) {
+        const dayStr = segments[0];
+        const timeStr = segments[1];
+        // segments[2] is delivery type (오프라인/온라인), segments[3] is location (optional)
+        const location = segments.length >= 4 ? segments[3] : undefined;
+        
+        const day = parseKoreanDay(dayStr);
+        const timeRange = parseTimeRange(timeStr);
+        
+        if (day && timeRange) {
+          slots.push({
+            day,
+            startTime: timeRange.start,
+            endTime: timeRange.end,
+            location: location,
+          });
+        } else {
+          console.warn(`[WARNING] Failed to parse pipe format: "${pipePart}"`);
+        }
+      }
+    }
+    
+    if (slots.length > 0) {
+      return slots;
+    }
+  }
 
   // Split by semicolon or comma first (for multiple time slots)
   // Airtable format uses semicolon: "월 16:00-17:30 (경영관 203강의실); 월 17:30-19:00 (경영관 203강의실)"
