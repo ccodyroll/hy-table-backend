@@ -90,12 +90,20 @@ export function parseMeetingTimes(meetingTimeStr: string): TimeSlot[] {
 
   // Check if this is pipe-separated format first (e.g., "목|16:00-17:30|오프라인|제2공학관 204강의실")
   // Format: "요일|시간|수업방식|강의실" or multiple separated by " / "
-  if (normalized.includes('|')) {
+  // Note: Only treat as pipe format if pipe appears at the start (after day), not inside parentheses
+  // e.g., "월 13:00-16:00 (오프라인 | 제3법학관 602호)" is NOT pipe format
+  const isPipeFormat = normalized.match(/^[월화수목금토일무]+\|/);
+  if (isPipeFormat) {
     // Handle pipe-separated format
     // Split by " / " or " /" or "/ " or just "/" for multiple entries
     const pipeParts = normalized.split(/\s*\/\s*/).map(p => p.trim()).filter(p => p);
     
     for (const pipePart of pipeParts) {
+      // Check if this part is actually pipe format (starts with day|)
+      if (!pipePart.match(/^[월화수목금토일무]+\|/)) {
+        continue; // Skip if not pipe format
+      }
+      
       const segments = pipePart.split('|').map(s => s.trim()).filter(s => s);
       if (segments.length >= 2) {
         const dayStr = segments[0];
