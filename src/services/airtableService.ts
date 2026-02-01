@@ -200,15 +200,22 @@ class AirtableService {
       meetingTimeStr = JSON.stringify(meetingTimeValue);
     }
     
-    // Debug: log if meetingTimes is empty
+    // Check if schedule_text contains time information
+    // Skip warning for formats like "||온라인|..." or "||실습|..." which don't have time info
+    const hasTimeInfo = meetingTimeStr && 
+      !meetingTimeStr.startsWith('||') && 
+      !meetingTimeStr.match(/^[|]*[온라인|실습|시간\s*미정]/) &&
+      (meetingTimeStr.match(/[월화수목금토일]/) || meetingTimeStr.match(/[0-9]{1,2}:[0-9]{2}/));
+    
+    // Debug: log if meetingTimes is empty (only if it should have time info)
     if (!meetingTimeStr) {
       console.warn(`[WARNING] Course "${courseName}" (${record.id}) has no meetingTimes field.`);
     }
     
     const meetingTimes = parseMeetingTimes(meetingTimeStr);
     
-    // Debug: log if parsing failed
-    if (meetingTimeStr && meetingTimes.length === 0) {
+    // Debug: log if parsing failed (only if it should have time info)
+    if (hasTimeInfo && meetingTimeStr && meetingTimes.length === 0) {
       console.warn(`[WARNING] Failed to parse meetingTimes for "${courseName}": "${meetingTimeStr}"`);
     }
 
