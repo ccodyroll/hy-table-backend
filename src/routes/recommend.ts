@@ -5,7 +5,7 @@ import schedulerService from '../services/schedulerService';
 import { buildRecommendationResponse } from '../utils/responseBuilder';
 import { z } from 'zod';
 import { DayOfWeek, TimeSlot, BlockedTime } from '../types';
-import { parseTimeRange, parseKoreanDay, isValidTimeFormat, isValidTimeRange, timeToMinutes } from '../utils/timeParser';
+import { parseTimeRange, parseKoreanDay, isValidTimeFormat, isValidTimeRange, timeToMinutes, parseMeetingTimes } from '../utils/timeParser';
 
 const router = Router();
 
