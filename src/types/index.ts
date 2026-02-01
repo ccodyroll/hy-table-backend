@@ -16,6 +16,7 @@ export interface Course {
   category: string;
   tags: string[];
   meetingTimes: TimeSlot[];
+  schedule_text?: string; // Original schedule text from Airtable
   deliveryType: 'ONLINE' | 'OFFLINE' | 'HYBRID';
   restrictions?: string[];
   instructor?: string;

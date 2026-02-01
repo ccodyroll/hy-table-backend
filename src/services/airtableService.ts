@@ -263,6 +263,7 @@ class AirtableService {
       category: category.toString(),
       tags,
       meetingTimes,
+      schedule_text: meetingTimeStr || undefined, // Include original schedule text
       deliveryType,
       restrictions,
       instructor,
