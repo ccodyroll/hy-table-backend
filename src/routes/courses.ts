@@ -1,5 +1,7 @@
 import { Router, Request, Response } from 'express';
 import airtableService from '../services/airtableService';
+import { DayOfWeek } from '../types';
+import { timeToMinutes } from '../utils/timeParser';
 
 const router = Router();
 
@@ -14,11 +16,29 @@ router.get('/', async (req: Request, res: Response) => {
 
     const courses = await airtableService.getCourses(major, query);
 
-    // Remove location field from meetingTimes for frontend response
-    const coursesForFrontend = courses.map(course => ({
-      ...course,
-      meetingTimes: course.meetingTimes.map(({ location, ...timeSlot }) => timeSlot),
-    }));
+    // Convert to frontend format
+    const coursesForFrontend = courses.map(course => {
+      // Convert meetingTimes to timeslots format for frontend
+      // Frontend expects: { day: "MON" | "TUE" | ..., startMin: number, endMin: number }
+      const timeslots = course.meetingTimes
+        .filter(timeSlot => {
+          // Filter out SUN (일요일) if frontend doesn't support it
+          // Keep only MON-SAT
+          const validDays: DayOfWeek[] = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+          return validDays.includes(timeSlot.day);
+        })
+        .map(timeSlot => ({
+          day: timeSlot.day as 'MON' | 'TUE' | 'WED' | 'THU' | 'FRI' | 'SAT',
+          startMin: timeToMinutes(timeSlot.startTime),
+          endMin: timeToMinutes(timeSlot.endTime),
+        }));
+
+      return {
+        ...course,
+        timeslots: timeslots, // Add timeslots field for frontend
+        meetingTimes: course.meetingTimes.map(({ location, ...timeSlot }) => timeSlot), // Keep meetingTimes for backward compatibility
+      };
+    });
 
     res.json({
       courses: coursesForFrontend,
