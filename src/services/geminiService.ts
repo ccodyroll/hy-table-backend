@@ -57,6 +57,12 @@ Rules:
    - "팀플" → avoidTeamProjects: true
    - "온라인/비대면" → preferOnlineClasses: true
    - "월요일 수업 없음" → avoidDays: ["MON"]
+   - "목표 학점 N점" or "N학점" or "N-N점" or "N~N점" → targetCredits: "N" or "N~N" (string format)
+     Examples:
+     * "내 목표 학점은 12-18점이야" → targetCredits: "12~18"
+     * "15학점 목표" → targetCredits: "15"
+     * "12점에서 18점 사이" → targetCredits: "12~18"
+     * "최소 12점 최대 18점" → targetCredits: "12~18"
 
 5. Notes field normalization (CRITICAL):
    If the user mentions specific time constraints that cannot be mapped to structured fields, put them in "notes" field.
@@ -92,6 +98,7 @@ Output JSON schema:
   "maxConsecutiveClasses": number | null,
   "avoidTeamProjects": boolean | null,
   "preferOnlineClasses": boolean | null,
+  "targetCredits": string | null,
   "notes": string | null
 }
 
@@ -210,6 +217,7 @@ Output ONLY valid JSON array, no markdown, no explanation. Example:
         : null,
       avoidTeamProjects: typeof constraints.avoidTeamProjects === 'boolean' ? constraints.avoidTeamProjects : null,
       preferOnlineClasses: typeof constraints.preferOnlineClasses === 'boolean' ? constraints.preferOnlineClasses : null,
+      targetCredits: typeof constraints.targetCredits === 'string' ? constraints.targetCredits : null,
       notes: typeof constraints.notes === 'string' ? constraints.notes : null,
     };
   }

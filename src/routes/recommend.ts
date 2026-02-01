@@ -335,6 +335,22 @@ router.post('/', async (req: Request, res: Response) => {
             ...(geminiConstraints.avoidDays || []),
           ].filter((v: string, i: number, a: string[]) => a.indexOf(v) === i),
         };
+        
+        // If Gemini parsed targetCredits, use it (unless already set from UI)
+        if (geminiConstraints.targetCredits && !constraints.targetCreditsMin && !constraints.targetCreditsMax) {
+          const rangeMatch = geminiConstraints.targetCredits.match(/(\d+)\s*[~-]\s*(\d+)/);
+          if (rangeMatch) {
+            parsedConstraints.targetCreditsMin = parseInt(rangeMatch[1], 10);
+            parsedConstraints.targetCreditsMax = parseInt(rangeMatch[2], 10);
+          } else {
+            const singleMatch = geminiConstraints.targetCredits.match(/(\d+)/);
+            if (singleMatch) {
+              const credits = parseInt(singleMatch[1], 10);
+              parsedConstraints.targetCreditsMin = credits;
+              parsedConstraints.targetCreditsMax = credits;
+            }
+          }
+        }
       }
     }
 
@@ -362,11 +378,17 @@ router.post('/', async (req: Request, res: Response) => {
     }
 
     // Parse targetCredits: support range like "15~18"
+    // Priority: parsedConstraints (from Gemini) > requestData.targetCredits
     let targetCredits: number;
     let targetCreditsMin: number;
     let targetCreditsMax: number;
     
-    if (typeof requestData.targetCredits === 'string') {
+    // First, check if targetCredits was parsed from freeTextRequest (Gemini)
+    if (parsedConstraints.targetCreditsMin !== undefined && parsedConstraints.targetCreditsMax !== undefined) {
+      targetCreditsMin = parsedConstraints.targetCreditsMin;
+      targetCreditsMax = parsedConstraints.targetCreditsMax;
+      targetCredits = targetCreditsMin; // Use minimum for backward compatibility
+    } else if (typeof requestData.targetCredits === 'string') {
       const rangeMatch = requestData.targetCredits.match(/(\d+)\s*[~-]\s*(\d+)/);
       if (rangeMatch) {
         targetCreditsMin = parseInt(rangeMatch[1], 10);

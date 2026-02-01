@@ -165,6 +165,17 @@ router.post('/', async (req: Request, res: Response) => {
       });
     }
 
+    // Target credits
+    if (parsedConstraints.targetCredits) {
+      conditions.push({
+        type: '목표학점 설정',
+        label: parsedConstraints.targetCredits.includes('~') 
+          ? `${parsedConstraints.targetCredits.replace('~', '-')}학점`
+          : `${parsedConstraints.targetCredits}학점`,
+        value: parsedConstraints.targetCredits,
+      });
+    }
+
     // Parse notes field for blocked times
     // Supports formats (reason text is ignored, only time is extracted):
     // - "월요일 18:00-19:00 알바" (HH:MM-HH:MM)

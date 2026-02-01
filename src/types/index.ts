@@ -44,6 +44,7 @@ export interface UserConstraints {
   maxConsecutiveClasses?: number | null;
   avoidTeamProjects?: boolean | null;
   preferOnlineClasses?: boolean | null;
+  targetCredits?: string | null; // Format: "15" or "12~18"
   notes?: string | null;
 }
 
