@@ -6,6 +6,7 @@ export interface TimeSlot {
   day: DayOfWeek;
   startTime: string; // HH:mm format
   endTime: string; // HH:mm format
+  location?: string; // 강의실 정보 (예: "경영관 203강의실")
 }
 
 export interface Course {

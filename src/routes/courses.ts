@@ -14,9 +14,15 @@ router.get('/', async (req: Request, res: Response) => {
 
     const courses = await airtableService.getCourses(major, query);
 
+    // Remove location field from meetingTimes for frontend response
+    const coursesForFrontend = courses.map(course => ({
+      ...course,
+      meetingTimes: course.meetingTimes.map(({ location, ...timeSlot }) => timeSlot),
+    }));
+
     res.json({
-      courses,
-      count: courses.length,
+      courses: coursesForFrontend,
+      count: coursesForFrontend.length,
     });
   } catch (error) {
     console.error('Error fetching courses:', error);

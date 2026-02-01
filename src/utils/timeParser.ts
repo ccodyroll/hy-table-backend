@@ -84,13 +84,30 @@ export function parseMeetingTimes(meetingTimeStr: string): TimeSlot[] {
   if (!normalized) return [];
 
   // Split by semicolon or comma first (for multiple time slots)
-  // Airtable format uses semicolon: "월 16:00-17:30 (경영관 101강의실); 월 17:30-19:00 (경영관 101강의실)"
+  // Airtable format uses semicolon: "월 16:00-17:30 (경영관 203강의실); 월 17:30-19:00 (경영관 203강의실)"
   const parts = normalized.split(/[;,]/).map(p => p.trim()).filter(p => p);
 
   for (let part of parts) {
-    // Remove location info in parentheses (e.g., "(경영관 101강의실)")
-    // This is for Airtable schedule_text format: "월 16:00-17:30 (경영관 101강의실)"
-    part = part.replace(/\s*\([^)]*\)\s*/g, '').trim();
+    // Extract location info from parentheses at the end (e.g., "(경영관 203강의실)")
+    // This is for Airtable schedule_text format: "월 16:00-17:30 (경영관 203강의실)"
+    // Note: Pattern 0 "수(15:00-17:00)" has time in parentheses, not location
+    let location: string | undefined;
+    
+    // Check if this is Pattern 0 format first (e.g., "수(15:00-17:00)")
+    const isPattern0 = part.match(/^[월화수목금토일]+\([^)]+\)$/);
+    
+    if (!isPattern0) {
+      // For other patterns, extract location from parentheses at the end
+      // Match: "월 16:00-17:30 (경영관 203강의실)" -> location = "경영관 203강의실"
+      const locationMatch = part.match(/\s+\(([^)]+)\)\s*$/);
+      if (locationMatch) {
+        location = locationMatch[1].trim();
+      }
+    }
+    
+    // Remove location info in parentheses for parsing (but keep Pattern 0 format)
+    const partWithoutLocation = part.replace(/\s+\([^)]+\)\s*$/g, '').trim();
+    part = partWithoutLocation;
     // Try multiple patterns
     
     // Pattern 0: Airtable format "수(15:00-17:00)" or "월(09:00-10:30), 수(15:00-17:00)"
@@ -109,6 +126,7 @@ export function parseMeetingTimes(meetingTimeStr: string): TimeSlot[] {
               day,
               startTime: timeRange.start,
               endTime: timeRange.end,
+              location: location,
             });
           }
         }
@@ -154,7 +172,7 @@ export function parseMeetingTimes(meetingTimeStr: string): TimeSlot[] {
     }
 
     const daysStr = dayTimeMatch[1];
-    const timeStr = dayTimeMatch[2];
+    const timeStr = dayTimeMatch[2].trim(); // Remove trailing whitespace
 
     const timeRange = parseTimeRange(timeStr);
     if (!timeRange) {
@@ -171,6 +189,7 @@ export function parseMeetingTimes(meetingTimeStr: string): TimeSlot[] {
           day,
           startTime: timeRange.start,
           endTime: timeRange.end,
+          location: location,
         });
       } else {
         console.warn(`[WARNING] Failed to parse day from "${dayPart}" in "${part}"`);
