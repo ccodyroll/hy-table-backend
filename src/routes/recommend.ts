@@ -94,7 +94,7 @@ router.post('/', async (req: Request, res: Response) => {
     };
 
     // Convert fixedLectures format
-    const fixedLectures = (requestData.fixedLectures || []).map(course => {
+    let fixedLectures = (requestData.fixedLectures || []).map(course => {
       const day = dayNumberToDayOfWeek(course.day);
       const startTime = startHourToTime(course.startHour);
       const durationHours = durationToHours(course.duration);
@@ -110,6 +110,65 @@ router.post('/', async (req: Request, res: Response) => {
         }],
       };
     });
+
+    // Parse "강의담기" from constraints
+    // Can be a single JSON string or an array of JSON strings
+    if (requestData.constraints && requestData.constraints['강의담기']) {
+      const 강의담기Value = requestData.constraints['강의담기'];
+      
+      // Handle array of 강의담기 items
+      let 강의담기Items: any[] = [];
+      if (Array.isArray(강의담기Value)) {
+        강의담기Items = 강의담기Value;
+      } else if (typeof 강의담기Value === 'string' && 강의담기Value.trim() !== 'false') {
+        강의담기Items = [강의담기Value];
+      }
+      
+      for (const item of 강의담기Items) {
+        if (typeof item !== 'string' || item.trim() === 'false') {
+          continue;
+        }
+        
+        try {
+          const 강의담기Data = JSON.parse(item);
+          
+          // Extract course information
+          const courseCode = 강의담기Data.수업코드 || 강의담기Data.code || 강의담기Data.courseId || '';
+          const courseName = 강의담기Data.과목명 || 강의담기Data.name || '';
+          const 요일_시간 = 강의담기Data.요일_시간 || 강의담기Data.schedule_text || 강의담기Data.meetingTimes || '';
+          
+          if (courseCode) {
+            // Parse meeting times from 요일_시간
+            let meetingTimes: TimeSlot[] = [];
+            
+            if (요일_시간 && 요일_시간 !== '시간 미정' && 요일_시간.trim() !== '' && 요일_시간 !== 'null') {
+              // Use parseMeetingTimes to parse the schedule
+              meetingTimes = parseMeetingTimes(요일_시간);
+            }
+            
+            // If no meeting times parsed, we still add it as fixed lecture
+            // (the scheduler will handle courses without meeting times)
+            if (meetingTimes.length === 0) {
+              console.warn(`[WARNING] 강의담기 "${courseName}" (${courseCode}) has no valid meeting times: "${요일_시간}"`);
+              // Add with empty meeting times - scheduler will handle this
+              meetingTimes = [];
+            }
+            
+            fixedLectures.push({
+              courseId: courseCode,
+              meetingTimes,
+            });
+            
+            console.log(`[INFO] Added 강의담기: ${courseName} (${courseCode}), meetingTimes: ${meetingTimes.length}`);
+          } else {
+            console.warn(`[WARNING] 강의담기 item missing courseCode:`, 강의담기Data);
+          }
+        } catch (error) {
+          console.error('[ERROR] Failed to parse 강의담기 JSON:', error);
+          console.error('[ERROR] 강의담기 value:', item);
+        }
+      }
+    }
 
     // Backward compatibility: also check basket
     if (requestData.basket && requestData.basket.length > 0) {
