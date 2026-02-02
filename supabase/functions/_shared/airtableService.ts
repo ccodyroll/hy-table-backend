@@ -1,97 +1,3 @@
-# Supabase Edge Functions Migration Guide
-
-This guide will help you migrate from Render.com Express server to Supabase Edge Functions.
-
-## Overview
-
-**Current Setup:**
-- Express.js server on Render.com
-- Node.js runtime
-- Sleep issues on free plan
-
-**New Setup:**
-- Supabase Edge Functions
-- Deno runtime
-- No sleep issues
-
-## Prerequisites
-
-1. Supabase account (free tier is sufficient)
-2. Supabase CLI installed
-3. Frontend project with Supabase already set up
-
-## Step 1: Install Supabase CLI
-
-**⚠️ Important:** Supabase CLI cannot be installed via `npm install -g`. Use one of the methods below:
-
-**Windows (Scoop - Recommended):**
-```powershell
-# Install Scoop if you don't have it
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
-
-# Add Supabase bucket
-scoop bucket add supabase https://github.com/supabase/scoop-bucket.git
-
-# Install Supabase CLI
-scoop install supabase
-```
-
-**macOS (Homebrew):**
-```bash
-brew install supabase/tap/supabase
-```
-
-**Alternative: Use npx (no installation needed):**
-```bash
-# You can use npx to run commands without installing globally
-npx supabase login
-npx supabase link --project-ref your-project-ref
-npx supabase functions deploy health
-```
-
-**For other platforms or direct download:**
-Visit: https://github.com/supabase/cli#install-the-cli
-
-## Step 2: Link to Supabase Project
-
-```bash
-# Login to Supabase
-supabase login
-
-# Link to your project
-supabase link --project-ref your-project-ref
-```
-
-Get your project ref from: Supabase Dashboard → Project Settings → General → Reference ID
-
-## Step 3: Set Environment Variables (Secrets)
-
-In Supabase Dashboard → Project Settings → Edge Functions → Secrets:
-
-Add the following secrets:
-
-```
-AIRTABLE_TOKEN=your_airtable_token
-AIRTABLE_BASE_ID=your_base_id
-AIRTABLE_TABLE_NAME=Courses
-AIRTABLE_TABLE_ID=tbl8Mza7Z65g7Pton
-GEMINI_API_KEY=your_gemini_key
-GEMINI_MODEL=gemini-2.5-flash
-```
-
-## Step 4: ✅ AirtableService Implementation - COMPLETE
-
-The AirtableService has been implemented using Airtable REST API. The file is located at:
-- `supabase/functions/_shared/airtableService.ts`
-
-**✅ This step is complete!** The service is ready to use.
-
-### Implementation Details
-
-The service uses Airtable REST API directly (no npm packages needed):
-
-```typescript
 import { Course, AirtableRecord } from './types.ts'
 import { parseMeetingTimes } from './timeParser.ts'
 
@@ -119,13 +25,18 @@ class AirtableService {
   async getCourses(major?: string, query?: string): Promise<Course[]> {
     // Check cache
     if (this.cache && Date.now() - this.cache.timestamp < this.CACHE_TTL) {
-      return this.filterCourses(this.cache.data, major, query)
+      const courses = this.cache.data
+      const filtered = this.filterCourses(courses, major, query)
+      console.log(`Airtable (cached): Filtered to ${filtered.length} courses (major: ${major || 'none'})`)
+      return filtered
     }
 
     // Wait for ongoing fetch
     if (this.cachePromise) {
+      console.log('Airtable: Waiting for ongoing fetch...')
       const courses = await this.cachePromise
-      return this.filterCourses(courses, major, query)
+      const filtered = this.filterCourses(courses, major, query)
+      return filtered
     }
 
     // Start new fetch
@@ -134,9 +45,15 @@ class AirtableService {
     try {
       const courses = await this.cachePromise
       this.cache = { data: courses, timestamp: Date.now() }
-      return this.filterCourses(courses, major, query)
+      const filtered = this.filterCourses(courses, major, query)
+      console.log(`Airtable: Fetched ${courses.length} total courses, filtered to ${filtered.length} courses (major: ${major || 'none'})`)
+      return filtered
     } catch (error) {
-      console.error('Error fetching from Airtable:', error)
+      console.error('=== ERROR fetching from Airtable ===')
+      console.error('Error:', error)
+      console.error('Major filter:', major)
+      console.error('Query filter:', query)
+      console.warn('Returning empty courses array due to Airtable error')
       return []
     } finally {
       this.cachePromise = null
@@ -162,7 +79,8 @@ class AirtableService {
       })
 
       if (!response.ok) {
-        throw new Error(`Airtable API error: ${response.statusText}`)
+        const errorText = await response.text()
+        throw new Error(`Airtable API error: ${response.status} ${response.statusText} - ${errorText}`)
       }
 
       const data = await response.json()
@@ -170,13 +88,18 @@ class AirtableService {
       offset = data.offset
     } while (offset)
 
-    return records.map(record => this.normalizeRecord(record))
+    // Normalize records to Course objects
+    const courses = records.map(record => this.normalizeRecord(record))
+    console.log(`Airtable: Fetched ${records.length} records, normalized to ${courses.length} courses`)
+    
+    return courses
   }
 
   private filterCourses(courses: Course[], major?: string, query?: string): Course[] {
     let filtered = courses
 
     if (major) {
+      // More flexible major matching (partial match or exact match)
       const majorLower = major.toLowerCase()
       filtered = filtered.filter(c => {
         const courseMajor = (c.major || '').toLowerCase()
@@ -199,47 +122,94 @@ class AirtableService {
   }
 
   private normalizeRecord(record: AirtableRecord): Course {
-    // Same normalization logic as Express version
-    // Copy from src/services/airtableService.ts normalizeRecord method
     const fields = record.fields
 
+    // Field ID mappings (primary) - fallback to field names
+    // course_name (fldxBRALu8pnBwGvn)
     const courseName = fields['fldxBRALu8pnBwGvn'] || fields.course_name || record.id
+    
+    // id (fldnrkAKox1BAjAp1) - e.g., "2026_1_BUS1059_11347"
     const courseId = fields['fldnrkAKox1BAjAp1'] || fields.id || record.id
+    
+    // course_code (fldqgpYh3n8lpCDj4) - e.g., "11347"
+    const courseCode = fields['fldqgpYh3n8lpCDj4'] || fields.course_code || ''
+    
+    // professor (fldyYL2fEvg61cTZY)
     const instructor = fields['fldyYL2fEvg61cTZY'] || fields.professor || undefined
+    
+    // classification (fldkXofStJWCLRFpL) - Single select
     const category = fields['fldkXofStJWCLRFpL'] || fields.classification || ''
+    
+    // credit (fldtXa5UzuOayoKS1)
     const credits = Number(fields['fldtXa5UzuOayoKS1'] || fields.credit || 0)
+    
+    // capacity (fldGifKoI5xDcvCP1)
     const capacity = fields['fldGifKoI5xDcvCP1'] || fields.capacity
     const capacityNum = capacity ? Number(capacity) : undefined
+    
+    // lecture_type (fldv3ZYOBW2kKqh10) - Single select
     const lectureType = fields['fldv3ZYOBW2kKqh10'] || fields.lecture_type || '오프라인'
-
+    
+    // Map lecture_type to deliveryType
     let deliveryType: 'ONLINE' | 'OFFLINE' | 'HYBRID' = 'OFFLINE'
     const lectureTypeStr = lectureType.toString().toLowerCase()
     if (lectureTypeStr.includes('온라인') || lectureTypeStr === 'online') {
       deliveryType = 'ONLINE'
     } else if (lectureTypeStr.includes('혼합') || lectureTypeStr.includes('blended') || lectureTypeStr === 'hybrid') {
       deliveryType = 'HYBRID'
+    } else {
+      deliveryType = 'OFFLINE'
     }
-
+    
+    // schedule_text (fld7XicgiX9cukCAu) - Long text, contains time schedule
+    // Format: "월 16:00-17:30 (경영관 101강의실); 월 17:30-19:00 (경영관 101강의실)"
     let meetingTimeValue: any = fields['fld7XicgiX9cukCAu'] || fields.schedule_text || ''
+    
+    // Handle array format from Airtable
     let meetingTimeStr = ''
     if (Array.isArray(meetingTimeValue)) {
       meetingTimeStr = meetingTimeValue.join('; ')
     } else if (typeof meetingTimeValue === 'string') {
       meetingTimeStr = meetingTimeValue
+    } else if (meetingTimeValue && typeof meetingTimeValue === 'object') {
+      // Handle object format (e.g., {day: "월", time: "09:00-10:30"})
+      meetingTimeStr = JSON.stringify(meetingTimeValue)
+    }
+    
+    // Check if schedule_text contains time information
+    // Skip warning for formats like "||온라인|..." or "||실습|..." which don't have time info
+    const hasTimeInfo = meetingTimeStr && 
+      !meetingTimeStr.startsWith('||') && 
+      !meetingTimeStr.match(/^[|]*[온라인|실습|시간\s*미정]/) &&
+      (meetingTimeStr.match(/[월화수목금토일]/) || meetingTimeStr.match(/[0-9]{1,2}:[0-9]{2}/))
+    
+    // Debug: log if meetingTimes is empty (only if it should have time info)
+    if (!meetingTimeStr) {
+      console.warn(`[WARNING] Course "${courseName}" (${record.id}) has no meetingTimes field.`)
+    }
+    
+    const meetingTimes = parseMeetingTimes(meetingTimeStr)
+    
+    // Debug: log if parsing failed (only if it should have time info)
+    if (hasTimeInfo && meetingTimeStr && meetingTimes.length === 0) {
+      console.warn(`[WARNING] Failed to parse meetingTimes for "${courseName}": "${meetingTimeStr}"`)
     }
 
-    const meetingTimes = parseMeetingTimes(meetingTimeStr)
-
+    // interest_categories (fldVAPyjkCSXv6D65) - Multiple select
+    // ai_tags (fldkv2NYfExqtJ5hW) - Multiple select
+    // Combine both into tags array
     const interestCategories = fields['fldVAPyjkCSXv6D65'] || fields.interest_categories || []
     const aiTags = fields['fldkv2NYfExqtJ5hW'] || fields.ai_tags || []
     
     let tags: string[] = []
+    // Handle interest_categories (array of strings)
     if (Array.isArray(interestCategories)) {
       tags = [...interestCategories]
     } else if (typeof interestCategories === 'string') {
       tags = interestCategories.split(',').map((t: string) => t.trim()).filter(Boolean)
     }
-
+    
+    // Handle ai_tags (array of strings)
     if (Array.isArray(aiTags)) {
       tags = [...tags, ...aiTags]
     } else if (typeof aiTags === 'string') {
@@ -247,6 +217,7 @@ class AirtableService {
       tags = [...tags, ...aiTagsArray]
     }
 
+    // restrictions (fldYU6iYuGyEu6dWY)
     let restrictions: string[] = []
     const restrictionsValue = fields['fldYU6iYuGyEu6dWY'] || fields.restrictions
     if (Array.isArray(restrictionsValue)) {
@@ -254,7 +225,9 @@ class AirtableService {
     } else if (typeof restrictionsValue === 'string') {
       restrictions = restrictionsValue.split(',').map((r: string) => r.trim()).filter(Boolean)
     }
-
+    
+    // For major, use classification or Area field
+    // Area (fldKu4Pa3e5zDUo3f) - might contain major info
     const area = fields['fldKu4Pa3e5zDUo3f'] || fields.Area || ''
     const major = area || category || ''
 
@@ -266,102 +239,22 @@ class AirtableService {
       category: category.toString(),
       tags,
       meetingTimes,
-      schedule_text: meetingTimeStr || undefined,
+      schedule_text: meetingTimeStr || undefined, // Include original schedule text
       deliveryType,
       restrictions,
       instructor,
       capacity: capacityNum,
-      enrolled: undefined,
+      enrolled: undefined, // Not in new schema
     }
+  }
+
+  /**
+   * Clear cache (useful for testing or forced refresh)
+   */
+  clearCache(): void {
+    this.cache = null
+    this.cachePromise = null // Also clear Promise cache
   }
 }
 
 export default new AirtableService()
-```
-
-## Step 5: Deploy Edge Functions
-
-```bash
-# Deploy each function
-supabase functions deploy health
-supabase functions deploy courses
-supabase functions deploy recommend
-supabase functions deploy parse-condition
-```
-
-## Step 6: Update Frontend API URLs
-
-Update your frontend code to use Supabase Edge Functions:
-
-```typescript
-// Before (Render)
-const API_URL = 'https://hy-table-backend-hmjm.onrender.com'
-
-// After (Supabase)
-const SUPABASE_URL = 'https://your-project.supabase.co'
-const API_URL = `${SUPABASE_URL}/functions/v1`
-
-// Example usage
-const response = await fetch(`${API_URL}/courses?major=컴퓨터공학`, {
-  headers: {
-    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-  },
-})
-```
-
-## Step 7: Test
-
-```bash
-# Test health endpoint
-curl https://your-project.supabase.co/functions/v1/health \
-  -H "Authorization: Bearer YOUR_ANON_KEY"
-
-# Test courses endpoint
-curl "https://your-project.supabase.co/functions/v1/courses?q=경영" \
-  -H "Authorization: Bearer YOUR_ANON_KEY"
-```
-
-## API Endpoints
-
-After migration, your endpoints will be:
-
-- Health: `https://your-project.supabase.co/functions/v1/health`
-- Courses: `https://your-project.supabase.co/functions/v1/courses`
-- Recommend: `https://your-project.supabase.co/functions/v1/recommend`
-- Parse Condition: `https://your-project.supabase.co/functions/v1/parse-condition`
-
-## Troubleshooting
-
-### Error: Function not found
-- Make sure you deployed the function: `supabase functions deploy <function-name>`
-
-### Error: Unauthorized
-- Check that you're including the Authorization header with your Supabase anon key
-
-### Error: AIRTABLE_TOKEN not set
-- Verify secrets are set in Supabase Dashboard → Edge Functions → Secrets
-
-### Local Development
-
-```bash
-# Start Supabase locally
-supabase start
-
-# Serve functions locally
-supabase functions serve courses --env-file .env.local
-```
-
-## Next Steps
-
-1. Complete AirtableService implementation (see Step 4)
-2. Convert other services (GeminiService, SchedulerService) to Deno format
-3. Convert recommend and parse-condition routes to Edge Functions
-4. Test all endpoints
-5. Update frontend to use new URLs
-6. Decommission Render.com service
-
-## Notes
-
-- Edge Functions have a 60-second timeout limit
-- Make sure `/api/recommend` completes within 60 seconds
-- Consider optimizing if it takes longer

@@ -2,9 +2,7 @@ import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { corsHeaders } from '../_shared/cors.ts'
 import { DayOfWeek } from '../_shared/types.ts'
 import { timeToMinutes } from '../_shared/timeParser.ts'
-
-// Note: AirtableService needs to be implemented using Deno-compatible Airtable API
-// For now, this is a placeholder structure
+import airtableService from '../_shared/airtableService.ts'
 
 serve(async (req) => {
   // Handle CORS preflight
@@ -17,21 +15,20 @@ serve(async (req) => {
     const major = url.searchParams.get('major') || undefined
     const query = url.searchParams.get('q') || undefined
 
-    // TODO: Implement AirtableService for Deno
-    // For now, return empty array
-    // const airtableService = new AirtableService()
-    // const courses = await airtableService.getCourses(major, query)
-
-    const courses: any[] = [] // Placeholder
+    const courses = await airtableService.getCourses(major, query)
 
     // Convert to frontend format
     const coursesForFrontend = courses.map(course => {
+      // Convert meetingTimes to timeslots format for frontend
+      // Frontend expects: { day: "MON" | "TUE" | ..., startMin: number, endMin: number }
       const timeslots = course.meetingTimes
-        .filter((timeSlot: any) => {
+        .filter(timeSlot => {
+          // Filter out SUN (일요일) if frontend doesn't support it
+          // Keep only MON-SAT
           const validDays: DayOfWeek[] = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
           return validDays.includes(timeSlot.day)
         })
-        .map((timeSlot: any) => ({
+        .map(timeSlot => ({
           day: timeSlot.day as 'MON' | 'TUE' | 'WED' | 'THU' | 'FRI' | 'SAT',
           startMin: timeToMinutes(timeSlot.startTime),
           endMin: timeToMinutes(timeSlot.endTime),
@@ -39,8 +36,8 @@ serve(async (req) => {
 
       return {
         ...course,
-        timeslots: timeslots,
-        meetingTimes: course.meetingTimes.map(({ location, ...timeSlot }: any) => timeSlot),
+        timeslots: timeslots, // Add timeslots field for frontend
+        meetingTimes: course.meetingTimes.map(({ location, ...timeSlot }) => timeSlot), // Keep meetingTimes for backward compatibility
       }
     })
 

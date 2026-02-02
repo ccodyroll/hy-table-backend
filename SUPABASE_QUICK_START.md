@@ -23,12 +23,9 @@ supabase/
 
 ## Next Steps
 
-### 1. Complete AirtableService Implementation
+### 1. ✅ AirtableService Implementation - COMPLETE
 
-The `courses/index.ts` currently has a placeholder. You need to:
-
-1. Create `supabase/functions/_shared/airtableService.ts` using Airtable REST API
-2. See `SUPABASE_MIGRATION.md` Step 4 for implementation details
+The `courses/index.ts` and `_shared/airtableService.ts` are now complete and ready to use!
 
 ### 2. Convert Remaining Services
 
@@ -43,10 +40,36 @@ Convert these services to Deno format:
 
 ### 4. Deploy
 
-```bash
-# Install Supabase CLI
-npm install -g supabase
+**First, install Supabase CLI:**
 
+**Windows (Scoop):**
+```powershell
+# Install Scoop if you don't have it
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
+
+# Add Supabase bucket
+scoop bucket add supabase https://github.com/supabase/scoop-bucket.git
+
+# Install Supabase CLI
+scoop install supabase
+```
+
+**macOS (Homebrew):**
+```bash
+brew install supabase/tap/supabase
+```
+
+**Or use npx (no installation needed):**
+```bash
+# Use npx to run commands without installing
+npx supabase login
+npx supabase link --project-ref YOUR_PROJECT_REF
+npx supabase functions deploy health
+```
+
+**Then deploy:**
+```bash
 # Login
 supabase login
 
@@ -67,10 +90,12 @@ supabase functions deploy parse-condition
 
 - ✅ Basic structure created
 - ✅ Health endpoint ready
-- ✅ Courses endpoint structure (needs AirtableService)
+- ✅ Courses endpoint **COMPLETE** (AirtableService implemented)
+- ✅ AirtableService for Deno (using REST API)
 - ⏳ Recommend endpoint (to be created)
 - ⏳ Parse-condition endpoint (to be created)
-- ⏳ Shared services (to be converted)
+- ⏳ GeminiService (to be converted)
+- ⏳ SchedulerService (to be converted)
 
 ## Important Notes
 
