@@ -1,0 +1,14 @@
+# Supabase Edge Functions Configuration
+
+[functions]
+# Health check function
+health = { verify_jwt = false }
+
+# Courses function
+courses = { verify_jwt = false }
+
+# Recommend function
+recommend = { verify_jwt = false }
+
+# Parse condition function
+parse-condition = { verify_jwt = false }
