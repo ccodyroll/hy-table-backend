@@ -353,15 +353,30 @@ supabase functions serve courses --env-file .env.local
 
 ## Next Steps
 
-1. Complete AirtableService implementation (see Step 4)
-2. Convert other services (GeminiService, SchedulerService) to Deno format
-3. Convert recommend and parse-condition routes to Edge Functions
-4. Test all endpoints
-5. Update frontend to use new URLs
-6. Decommission Render.com service
+1. ✅ ~~Complete AirtableService implementation~~ - **DONE** (see Step 4)
+2. ⏳ Convert other services (GeminiService, SchedulerService) to Deno format
+3. ⏳ Convert recommend and parse-condition routes to Edge Functions
+4. ⏳ Test all endpoints
+5. ⏳ Update frontend to use new URLs
+6. ⏳ Decommission Render.com service
+
+## Current Progress
+
+### ✅ Completed
+- Health endpoint (`supabase/functions/health/index.ts`)
+- Courses endpoint (`supabase/functions/courses/index.ts`) - **FULLY FUNCTIONAL**
+- AirtableService (`supabase/functions/_shared/airtableService.ts`) - **COMPLETE**
+- Shared types and utilities (`_shared/types.ts`, `_shared/timeParser.ts`, `_shared/cors.ts`)
+
+### ⏳ Remaining Work
+- **GeminiService**: Convert to Deno (use `npm: @google/generative-ai` or REST API)
+- **SchedulerService**: Convert to Deno (mostly TypeScript, should work with minimal changes)
+- **Recommend endpoint**: Create `supabase/functions/recommend/index.ts`
+- **Parse-condition endpoint**: Create `supabase/functions/parse-condition/index.ts`
 
 ## Notes
 
 - Edge Functions have a 60-second timeout limit
 - Make sure `/api/recommend` completes within 60 seconds
 - Consider optimizing if it takes longer
+- **Courses endpoint is ready to deploy and test!**
